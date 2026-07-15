@@ -39,7 +39,40 @@ console.log(Date.now()-t+"ms",[...w.document.querySelectorAll("#batchStats .stat
 
 하나라도 걸리면 D-005(청킹 미도입)를 재검토한다.
 
+## v0.3 검수 루프 (Chromium 실측, 2026-07-15)
+
+| 동작 | 결과 |
+|---|---|
+| 승인 40회 연타 (매회 큐+대시보드+히스토그램 재렌더) | 102ms 총, **2.5ms/회** |
+| 그 40회가 IndexedDB에 남는가 | **40/40** (수정 전 34/40 - D-004 참조) |
+
+재현: `docs/` 옆의 스크립트가 아니라 아래를 붙여넣어 확인한다.
+```bash
+node -e '
+const { chromium } = require("playwright");
+(async () => {
+  const b = await chromium.launch(); const p = await b.newPage();
+  await p.goto("file://"+process.cwd()+"/index.html#workspace", {waitUntil:"networkidle"});
+  await p.click("#loadBatch"); await p.waitForSelector("#reviewBody .rvitem");
+  const t = Date.now();
+  for (let i=0;i<40;i++) await p.keyboard.press("a");
+  console.log(Date.now()-t+"ms", (await p.locator(".rvprog").innerText()).replace(/\n/g," "));
+  await p.reload({waitUntil:"networkidle"}); await p.click("#loadBatch");
+  await p.waitForSelector("#resumeBar:not([hidden])");
+  console.log((await p.locator("#resumeBar").innerText()).split(" on ")[0].replace(/\n/g," "));
+  await b.close();
+})();'
+```
+
+## 손으로 확인할 것 (v0.3 검수 루프)
+
+- [ ] **큰 배치 검수**: 2,500건 배치에서 검수 대기열이 수백 개일 때 `j` 연타가 매끄러운가.
+- [ ] **내보내기**: 2,500건 수정본 JSONL 다운로드가 탭을 얼리지 않는가(`toCorrectedJsonl`이 전 문서를 JSON.parse/stringify로 딥카피한다).
+- [ ] **저장소 차단**: 시크릿 모드/저장소 차단에서 검수가 정상 동작하고 이어하기만 조용히 빠지는가.
+
 ## 알려진 한계
 
 - 슬라이더 `input` 이벤트마다 전체 재계산이 돈다. 디바운스가 없다 - 캘리브레이션 셋 500건 기준으로는 체감되지 않지만, 사용자가 수만 건짜리 라벨 CSV를 넣으면 여기가 병목이다.
-- `renderHist`/`renderPathTable`은 매번 innerHTML을 통째로 교체한다. 행이 수백 개가 되면 증분 갱신이 필요할 수 있다.
+- `renderHist`/`renderPathTable`은 매번 innerHTML을 통째로 교체한다. 행이 수백 개가 되면 증분 갱신이 필요할 수 있다. 검수 결정 1회마다 이 둘이 다시 그려진다.
+- `persistReview()`는 결정마다 `saveSession`을 부르지만, store가 쓰기를 직렬화하고 최신 스냅샷으로 병합한다(D-004). 버스트는 소수의 트랜잭션으로 접히고 마지막 상태는 항상 남는다.
+- `toCorrectedJsonl`은 전 배치를 딥카피한다. 원본 불변성을 지키기 위한 의도적 선택이고 테스트로 고정돼 있지만, 메모리는 배치 크기의 2배를 쓴다.

@@ -969,3 +969,59 @@ test("export: the panel note tracks review decisions as they happen", () => {
   key(w, "u");
   assert.match(note(), /^1 decision\(s\)/, "undo is reflected too");
 });
+
+test("review: a burst of decisions all persists to the last snapshot", async () => {
+  const FDBFactory = require("fake-indexeddb/lib/FDBFactory");
+  const idb = new FDBFactory();
+
+  const w1 = bootWithBatch({ idb });
+  for (let i = 0; i < 40; i++) key(w1, "a");
+  assert.match(rvText(w1, ".rvprog"), /^40 \/ 85 reviewed$/);
+  await w1.eval("flushSessions()");
+
+  const w2 = bootWithBatch({ idb });
+  await waitFor(() => !w2.document.getElementById("resumeBar").hidden, "resume bar");
+  assert.match(w2.document.getElementById("resumeBar").textContent,
+    /You reviewed 40 field\(s\)/, "every decision in the burst survived");
+  w2.document.getElementById("resumeYes").dispatchEvent(new w2.Event("click", { bubbles: true }));
+  assert.match(rvText(w2, ".rvprog"), /^40 \/ 85 reviewed$/);
+});
+
+test("store: a burst reuses one connection and coalesces its writes", async () => {
+  // The bug this guards: opening and closing a connection per decision raced in
+  // Chromium and lost 6 of 40 approvals. fake-indexeddb does NOT reproduce that
+  // race (the test above passes even against the broken version), so assert the
+  // mechanism instead - one connection, and a burst collapsing to few writes.
+  const FDBFactory = require("fake-indexeddb/lib/FDBFactory");
+  const idb = new FDBFactory();
+  let opens = 0, puts = 0;
+  const realOpen = idb.open.bind(idb);
+  idb.open = function (...a) {
+    opens++;
+    const req = realOpen(...a);
+    req.addEventListener("success", () => {
+      const db = req.result;
+      const realTx = db.transaction.bind(db);
+      db.transaction = function (...t) {
+        const tx = realTx(...t);
+        const realStore = tx.objectStore.bind(tx);
+        tx.objectStore = function (...s) {
+          const store = realStore(...s);
+          const realPut = store.put.bind(store);
+          store.put = function (...p) { puts++; return realPut(...p); };
+          return store;
+        };
+        return tx;
+      };
+    });
+    return req;
+  };
+
+  const w = bootWithBatch({ idb });
+  for (let i = 0; i < 40; i++) key(w, "a");
+  await w.eval("flushSessions()");
+
+  assert.equal(opens, 1, "one cached connection for the whole session, not one per write");
+  assert.ok(puts < 40, `40 decisions coalesced into ${puts} write(s)`);
+  assert.ok(puts >= 1, "the final state is written");
+});
