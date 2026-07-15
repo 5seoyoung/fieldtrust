@@ -130,6 +130,19 @@
     <button class="btn ghost" id="fit">Refit threshold</button>
     <div class="err" id="csvErr"></div>
   </div>
+
+  <div class="card" id="exportCard" hidden>
+    <div class="eyebrow">03 · Export</div>
+    <h2>Take it with you</h2>
+    <p class="sub">Everything is built in the browser from what you already loaded.</p>
+    <div class="exports">
+      <button class="btn ghost" id="expJsonl">Corrected JSONL</button>
+      <button class="btn ghost" id="expLabels">Label CSV</button>
+      <button class="btn ghost" id="expPolicy">Policy JSON</button>
+    </div>
+    <label class="chk"><input type="checkbox" id="exportMeta" checked> attach <code>_fieldtrust</code> per-field metadata</label>
+    <div class="note" id="exportNote"></div>
+  </div>
 </section>
 
 <section>
@@ -147,6 +160,12 @@
     <div class="eyebrow">Dashboard · This batch</div>
     <div class="stats" id="batchStats"></div>
     <div class="empty" id="batchEmpty">Load a batch to see how your policy plays out across it.</div>
+  </div>
+
+  <div class="card" id="reviewCard" hidden>
+    <div class="eyebrow">Review queue · below threshold only</div>
+    <div class="resume" id="resumeBar" hidden></div>
+    <div id="reviewBody"></div>
   </div>
 
   <div class="card" id="histCard" hidden>
@@ -202,11 +221,17 @@
 <script id="fieldtrust-shared">
 // INJECT:shared.js
 </script>
+<script id="fieldtrust-store">
+// INJECT:store.js
+</script>
 <script id="fieldtrust-lens">
 // INJECT:lens.js
 </script>
 <script id="fieldtrust-workspace">
 // INJECT:workspace.js
+</script>
+<script id="fieldtrust-review">
+// INJECT:review.js
 </script>
 <script id="fieldtrust-app">
 // INJECT:app.js

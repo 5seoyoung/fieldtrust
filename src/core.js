@@ -276,9 +276,15 @@ function parseBatch(text) {
       const response = obj && obj.response ? obj.response : obj;
       const id = (obj && obj.id != null) ? String(obj.id) : `line-${i + 1}`;
       const tokens = tokensFromOpenAI(response);
-      const { fields } = scoreFields(tokens);
+      const { fields, fullText, jsonStart, jsonEnd } = scoreFields(tokens);
       if (!Object.keys(fields).length) throw new Error("no JSON fields found");
-      docs.push({ id, line: i + 1, tokens, fields });
+      docs.push({
+        id, line: i + 1, tokens, fields,
+        // the extracted object itself - what review edits and export emits
+        data: JSON.parse(fullText.slice(jsonStart, jsonEnd)),
+        // optional source text, shown next to the field during review
+        context: (obj && (obj.context || obj.source_text)) || null,
+      });
     } catch (e) {
       errors.push({ line: i + 1, message: e.message });
     }
@@ -351,4 +357,155 @@ function batchSummary(docs, threshold) {
     nDocs: docs.length, nFields, nReview: nBelow, nAuto: nFields - nBelow,
     autoAcceptRate: nFields ? (nFields - nBelow) / nFields : 0,
   };
+}
+
+// ---------- JSONPath access ----------
+// Mirrors the paths json_spans emits ($.a.b[0]). Keys containing "." or "["
+// are ambiguous here exactly as they are in the parser - a shared limitation,
+// not a new one.
+function pathSegments(path) {
+  const segs = [];
+  const re = /\.([^.[\]]+)|\[(\d+)\]/g;
+  let m;
+  while ((m = re.exec(path))) segs.push(m[1] !== undefined ? m[1] : Number(m[2]));
+  return segs;
+}
+
+function getByPath(obj, path) {
+  let cur = obj;
+  for (const s of pathSegments(path)) {
+    if (cur == null) return undefined;
+    cur = cur[s];
+  }
+  return cur;
+}
+
+function setByPath(obj, path, value) {
+  const segs = pathSegments(path);
+  if (!segs.length) return value;
+  let cur = obj;
+  for (let i = 0; i < segs.length - 1; i++) {
+    if (cur[segs[i]] == null) cur[segs[i]] = typeof segs[i + 1] === "number" ? [] : {};
+    cur = cur[segs[i]];
+  }
+  cur[segs[segs.length - 1]] = value;
+  return obj;
+}
+
+// ---------- review queue ----------
+// Only what the policy sends to review, riskiest first. With no feasible
+// policy every field is queued - same safe default as decide().
+const itemKey = (docId, path) => docId + " " + path;
+
+function reviewQueue(docs, threshold) {
+  const items = [];
+  for (const doc of docs) {
+    for (const f of Object.values(doc.fields)) {
+      if (Number.isFinite(threshold) && f.meanLogprob >= threshold) continue;
+      items.push({
+        key: itemKey(doc.id, f.path), docId: doc.id, path: f.path, kind: f.kind,
+        value: getByPath(doc.data, f.path), score: f.meanLogprob,
+        geoProb: f.geoProb, minProb: f.minProb, tokens: f.tokens,
+        context: doc.context,
+      });
+    }
+  }
+  return items.sort((a, b) => a.score - b.score || (a.docId < b.docId ? -1 : 1));
+}
+
+// ---------- label CSV ----------
+function csvCell(v) {
+  const s = String(v);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+// Reviewing produces exactly the labels calibration needs: approve = the value
+// was right (1), edit = it was wrong (0). This is what closes the loop.
+function toLabelCsv(items, decisions) {
+  const rows = ["doc_id,field_path,score,correct"];
+  for (const it of items) {
+    const d = decisions[it.key];
+    if (!d) continue;
+    rows.push([csvCell(it.docId), csvCell(it.path), it.score.toFixed(6),
+               d.action === "approve" ? 1 : 0].join(","));
+  }
+  return rows.join("\n") + "\n";
+}
+
+// Accepts both the 2-column form a user types (`score,correct`) and the
+// 4-column form review exports (`doc_id,field_path,score,correct`), with or
+// without a header - otherwise the flywheel would need a manual edit step.
+function parseLabelCsv(text) {
+  const rows = text.trim().split(/\r?\n+/)
+    .map(l => l.split(/[,\t]/).map(c => c.trim().replace(/^"|"$/g, "")))
+    .filter(r => r.length && r.some(c => c !== ""));
+  if (!rows.length) return { scores: [], correct: [], skipped: 0 };
+
+  let si = -1, ci = -1, start = 0;
+  const head = rows[0].map(h => h.toLowerCase());
+  if (head.includes("score") && (head.includes("correct") || head.includes("label"))) {
+    si = head.indexOf("score");
+    ci = head.includes("correct") ? head.indexOf("correct") : head.indexOf("label");
+    start = 1;
+  }
+
+  const scores = [], correct = [];
+  let skipped = 0;
+  for (let i = start; i < rows.length; i++) {
+    const r = rows[i];
+    // no header: the last two columns are score,correct in both layouts
+    const s = si >= 0 ? r[si] : r[r.length - 2];
+    const c = ci >= 0 ? r[ci] : r[r.length - 1];
+    const sc = parseFloat(s);
+    const cc = /^(1|true|yes)$/i.test(String(c)) ? 1 : /^(0|false|no)$/i.test(String(c)) ? 0 : NaN;
+    if (isNaN(sc) || isNaN(cc)) { skipped++; continue; }
+    scores.push(sc); correct.push(!!cc);
+  }
+  return { scores, correct, skipped };
+}
+
+// ---------- exports ----------
+// Corrected extractions, not the OpenAI envelope: re-emitting logprobs would
+// be bloat nobody consumes.
+function toCorrectedJsonl(docs, decisions, opts) {
+  const o = opts || {};
+  return docs.map(doc => {
+    const data = JSON.parse(JSON.stringify(doc.data));
+    const meta = {};
+    for (const f of Object.values(doc.fields)) {
+      const d = decisions[itemKey(doc.id, f.path)];
+      if (d && d.action === "edit") setByPath(data, f.path, d.value);
+      if (o.meta) meta[f.path] = {
+        score: Number(f.meanLogprob.toFixed(6)),
+        decision: Number.isFinite(o.threshold) && f.meanLogprob >= o.threshold ? "auto" : "review",
+        reviewed: !!d,
+      };
+    }
+    const out = { id: doc.id, data };
+    if (o.meta) out._fieldtrust = meta;
+    return JSON.stringify(out);
+  }).join("\n") + "\n";
+}
+
+function toPolicyJson(fit, fittedAt) {
+  return JSON.stringify({
+    threshold: fit && fit.feasible ? Number(fit.threshold.toFixed(6)) : null,
+    targetPrecision: fit ? fit.targetPrecision : null,
+    delta: fit ? fit.delta : null,
+    nCalib: fit ? fit.nCalib : 0,
+    feasible: !!(fit && fit.feasible),
+    score: "mean_logprob",
+    fittedAt: fittedAt || null,
+  }, null, 2) + "\n";
+}
+
+// ---------- batch identity ----------
+// FNV-1a. Identifies a batch so a reload can offer to resume its session.
+function hashText(text) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, "0");
 }

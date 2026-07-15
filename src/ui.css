@@ -6,6 +6,9 @@
   --disp:'Space Grotesk',sans-serif; --body:'Inter',sans-serif;
 }
 *{box-sizing:border-box;margin:0;padding:0}
+/* a class that sets `display` beats the UA rule for [hidden], which silently
+   un-hides anything we toggle with .hidden - keep this above the components */
+[hidden]{display:none!important}
 html{background:var(--bg)}
 body{font-family:var(--body);color:var(--ink);line-height:1.55;font-size:15px;min-height:100vh}
 a{color:var(--certain)}
@@ -157,6 +160,60 @@ input[type=file]{font-family:var(--mono);font-size:11.5px;margin-bottom:10px;wid
 input[type=file]:focus-visible{outline:2px solid var(--certain);outline-offset:2px}
 .pop .trow.chosen .tk{color:#fff;font-weight:600}
 .pop .trow.chosen .tb{background:#EDF3F1}
+
+/* ---------- workspace: review queue ---------- */
+.resume{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--certain-soft);
+  border:1px solid #BFDDD6;border-radius:8px;padding:9px 12px;margin-bottom:12px;font-size:12.5px;color:#0A5C4D}
+.resumeact{margin-left:auto;display:flex;gap:12px}
+.resume .linkbtn{color:#0A5C4D}
+
+.rvhead{display:flex;align-items:baseline;justify-content:space-between;gap:10px;font-size:12.5px;color:var(--muted)}
+.rvprog b{font-family:var(--disp);font-size:15px;color:var(--ink)}
+.rvpos{font-family:var(--mono);font-size:11px}
+.rvbar{height:5px;border-radius:3px;background:#ECF1EF;overflow:hidden;margin:7px 0 14px}
+.rvfill{height:100%;background:var(--certain)}
+
+.rvitem{border:1px solid var(--line);border-left:3px solid var(--alert);border-radius:8px;padding:14px 16px}
+.rvitem.decided{border-left-color:var(--certain)}
+.rvtop{display:flex;align-items:baseline;gap:10px;margin-bottom:8px}
+.rvpath{font-family:var(--mono);font-size:13px;font-weight:600}
+.rvdoc{font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:auto}
+.rvvalue{font-family:var(--mono);font-size:17px;background:var(--alert-soft);border-radius:5px;
+  padding:7px 10px;word-break:break-word;cursor:default}
+.rvvalue:focus-visible{outline:2px solid var(--certain);outline-offset:1px}
+.rvedit{width:100%;font-family:var(--mono);font-size:17px;padding:7px 10px;border:1px solid var(--certain);
+  border-radius:5px;background:#fff;color:var(--ink)}
+.rvedit:focus{outline:2px solid var(--certain);outline-offset:1px}
+.rvhint{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:5px}
+.rvconf{font-family:var(--mono);font-size:11px;color:var(--muted);margin:8px 0 6px}
+.rvtokens{display:flex;flex-wrap:wrap;gap:4px 12px;font-family:var(--mono);font-size:11px;color:var(--muted)}
+.rvtokens .trow{display:flex;align-items:center;gap:6px}
+.rvtokens .tb{height:5px;border-radius:3px;background:#9FCFC4;min-width:2px}
+.rvtokens .tp{min-width:42px;text-align:right}
+.rvctx{margin-top:10px;padding-top:9px;border-top:1px solid #ECF1EF;font-size:12.5px;color:#3E4E4A;line-height:1.5}
+.rvctxlbl{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--muted);display:block;margin-bottom:3px}
+.rvdecided{margin-top:9px;font-size:11.5px;color:var(--certain);font-family:var(--mono)}
+
+.rvkeys{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}
+.rvbtn{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);
+  background:none;border:1px solid var(--line);border-radius:7px;padding:5px 10px;cursor:pointer}
+.rvbtn:hover:not(:disabled){color:var(--ink);background:#F4F7F6}
+.rvbtn:disabled{opacity:.45;cursor:default}
+.rvbtn:focus-visible{outline:2px solid var(--certain);outline-offset:2px}
+kbd{font-family:var(--mono);font-size:10.5px;background:var(--ink);color:#fff;border-radius:4px;padding:1px 5px}
+
+.rvdone{text-align:center;padding:14px 8px}
+.rvdonehd{font-family:var(--disp);font-weight:700;font-size:17px;margin-bottom:8px}
+.rvdone p{font-size:13.5px;color:#3E4E4A;max-width:52ch;margin:0 auto 6px}
+.rvdonesub{color:var(--muted)!important;font-size:12.5px!important}
+.rvdoneact{display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap}
+
+/* ---------- workspace: export ---------- */
+.exports{display:flex;gap:8px;flex-wrap:wrap}
+.exports .btn{margin-top:0}
+.chk{display:flex;align-items:center;gap:7px;margin-top:12px;font-size:12.5px;color:var(--muted)}
+.chk input{accent-color:var(--certain)}
 
 /* ---------- about ---------- */
 .prose h2{font-size:19px;margin-bottom:10px}

@@ -63,6 +63,11 @@ $("batchFile").addEventListener("change", e => {
   reader.readAsText(file);
 });
 $("loadBatch").addEventListener("click", loadBatch);
+$("expJsonl").addEventListener("click", exportJsonl);
+$("expLabels").addEventListener("click", exportLabels);
+$("expPolicy").addEventListener("click", exportPolicy);
+$("exportMeta").addEventListener("change", renderExport);
+document.addEventListener("keydown", reviewKeydown);
 
 tabPair("tabSynth", "tabCsv",
   () => { $("csvIn").style.display = "none"; refit(); },

@@ -16,6 +16,9 @@
   --disp:'Space Grotesk',sans-serif; --body:'Inter',sans-serif;
 }
 *{box-sizing:border-box;margin:0;padding:0}
+/* a class that sets `display` beats the UA rule for [hidden], which silently
+   un-hides anything we toggle with .hidden - keep this above the components */
+[hidden]{display:none!important}
 html{background:var(--bg)}
 body{font-family:var(--body);color:var(--ink);line-height:1.55;font-size:15px;min-height:100vh}
 a{color:var(--certain)}
@@ -168,6 +171,60 @@ input[type=file]:focus-visible{outline:2px solid var(--certain);outline-offset:2
 .pop .trow.chosen .tk{color:#fff;font-weight:600}
 .pop .trow.chosen .tb{background:#EDF3F1}
 
+/* ---------- workspace: review queue ---------- */
+.resume{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--certain-soft);
+  border:1px solid #BFDDD6;border-radius:8px;padding:9px 12px;margin-bottom:12px;font-size:12.5px;color:#0A5C4D}
+.resumeact{margin-left:auto;display:flex;gap:12px}
+.resume .linkbtn{color:#0A5C4D}
+
+.rvhead{display:flex;align-items:baseline;justify-content:space-between;gap:10px;font-size:12.5px;color:var(--muted)}
+.rvprog b{font-family:var(--disp);font-size:15px;color:var(--ink)}
+.rvpos{font-family:var(--mono);font-size:11px}
+.rvbar{height:5px;border-radius:3px;background:#ECF1EF;overflow:hidden;margin:7px 0 14px}
+.rvfill{height:100%;background:var(--certain)}
+
+.rvitem{border:1px solid var(--line);border-left:3px solid var(--alert);border-radius:8px;padding:14px 16px}
+.rvitem.decided{border-left-color:var(--certain)}
+.rvtop{display:flex;align-items:baseline;gap:10px;margin-bottom:8px}
+.rvpath{font-family:var(--mono);font-size:13px;font-weight:600}
+.rvdoc{font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:auto}
+.rvvalue{font-family:var(--mono);font-size:17px;background:var(--alert-soft);border-radius:5px;
+  padding:7px 10px;word-break:break-word;cursor:default}
+.rvvalue:focus-visible{outline:2px solid var(--certain);outline-offset:1px}
+.rvedit{width:100%;font-family:var(--mono);font-size:17px;padding:7px 10px;border:1px solid var(--certain);
+  border-radius:5px;background:#fff;color:var(--ink)}
+.rvedit:focus{outline:2px solid var(--certain);outline-offset:1px}
+.rvhint{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:5px}
+.rvconf{font-family:var(--mono);font-size:11px;color:var(--muted);margin:8px 0 6px}
+.rvtokens{display:flex;flex-wrap:wrap;gap:4px 12px;font-family:var(--mono);font-size:11px;color:var(--muted)}
+.rvtokens .trow{display:flex;align-items:center;gap:6px}
+.rvtokens .tb{height:5px;border-radius:3px;background:#9FCFC4;min-width:2px}
+.rvtokens .tp{min-width:42px;text-align:right}
+.rvctx{margin-top:10px;padding-top:9px;border-top:1px solid #ECF1EF;font-size:12.5px;color:#3E4E4A;line-height:1.5}
+.rvctxlbl{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--muted);display:block;margin-bottom:3px}
+.rvdecided{margin-top:9px;font-size:11.5px;color:var(--certain);font-family:var(--mono)}
+
+.rvkeys{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}
+.rvbtn{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);
+  background:none;border:1px solid var(--line);border-radius:7px;padding:5px 10px;cursor:pointer}
+.rvbtn:hover:not(:disabled){color:var(--ink);background:#F4F7F6}
+.rvbtn:disabled{opacity:.45;cursor:default}
+.rvbtn:focus-visible{outline:2px solid var(--certain);outline-offset:2px}
+kbd{font-family:var(--mono);font-size:10.5px;background:var(--ink);color:#fff;border-radius:4px;padding:1px 5px}
+
+.rvdone{text-align:center;padding:14px 8px}
+.rvdonehd{font-family:var(--disp);font-weight:700;font-size:17px;margin-bottom:8px}
+.rvdone p{font-size:13.5px;color:#3E4E4A;max-width:52ch;margin:0 auto 6px}
+.rvdonesub{color:var(--muted)!important;font-size:12.5px!important}
+.rvdoneact{display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap}
+
+/* ---------- workspace: export ---------- */
+.exports{display:flex;gap:8px;flex-wrap:wrap}
+.exports .btn{margin-top:0}
+.chk{display:flex;align-items:center;gap:7px;margin-top:12px;font-size:12.5px;color:var(--muted)}
+.chk input{accent-color:var(--certain)}
+
 /* ---------- about ---------- */
 .prose h2{font-size:19px;margin-bottom:10px}
 .prose h3{font-family:var(--disp);font-size:14px;margin:16px 0 5px}
@@ -296,6 +353,19 @@ input[type=file]:focus-visible{outline:2px solid var(--certain);outline-offset:2
     <button class="btn ghost" id="fit">Refit threshold</button>
     <div class="err" id="csvErr"></div>
   </div>
+
+  <div class="card" id="exportCard" hidden>
+    <div class="eyebrow">03 · Export</div>
+    <h2>Take it with you</h2>
+    <p class="sub">Everything is built in the browser from what you already loaded.</p>
+    <div class="exports">
+      <button class="btn ghost" id="expJsonl">Corrected JSONL</button>
+      <button class="btn ghost" id="expLabels">Label CSV</button>
+      <button class="btn ghost" id="expPolicy">Policy JSON</button>
+    </div>
+    <label class="chk"><input type="checkbox" id="exportMeta" checked> attach <code>_fieldtrust</code> per-field metadata</label>
+    <div class="note" id="exportNote"></div>
+  </div>
 </section>
 
 <section>
@@ -313,6 +383,12 @@ input[type=file]:focus-visible{outline:2px solid var(--certain);outline-offset:2
     <div class="eyebrow">Dashboard · This batch</div>
     <div class="stats" id="batchStats"></div>
     <div class="empty" id="batchEmpty">Load a batch to see how your policy plays out across it.</div>
+  </div>
+
+  <div class="card" id="reviewCard" hidden>
+    <div class="eyebrow">Review queue · below threshold only</div>
+    <div class="resume" id="resumeBar" hidden></div>
+    <div id="reviewBody"></div>
   </div>
 
   <div class="card" id="histCard" hidden>
@@ -638,9 +714,15 @@ function parseBatch(text) {
       const response = obj && obj.response ? obj.response : obj;
       const id = (obj && obj.id != null) ? String(obj.id) : `line-${i + 1}`;
       const tokens = tokensFromOpenAI(response);
-      const { fields } = scoreFields(tokens);
+      const { fields, fullText, jsonStart, jsonEnd } = scoreFields(tokens);
       if (!Object.keys(fields).length) throw new Error("no JSON fields found");
-      docs.push({ id, line: i + 1, tokens, fields });
+      docs.push({
+        id, line: i + 1, tokens, fields,
+        // the extracted object itself - what review edits and export emits
+        data: JSON.parse(fullText.slice(jsonStart, jsonEnd)),
+        // optional source text, shown next to the field during review
+        context: (obj && (obj.context || obj.source_text)) || null,
+      });
     } catch (e) {
       errors.push({ line: i + 1, message: e.message });
     }
@@ -713,6 +795,157 @@ function batchSummary(docs, threshold) {
     nDocs: docs.length, nFields, nReview: nBelow, nAuto: nFields - nBelow,
     autoAcceptRate: nFields ? (nFields - nBelow) / nFields : 0,
   };
+}
+
+// ---------- JSONPath access ----------
+// Mirrors the paths json_spans emits ($.a.b[0]). Keys containing "." or "["
+// are ambiguous here exactly as they are in the parser - a shared limitation,
+// not a new one.
+function pathSegments(path) {
+  const segs = [];
+  const re = /\.([^.[\]]+)|\[(\d+)\]/g;
+  let m;
+  while ((m = re.exec(path))) segs.push(m[1] !== undefined ? m[1] : Number(m[2]));
+  return segs;
+}
+
+function getByPath(obj, path) {
+  let cur = obj;
+  for (const s of pathSegments(path)) {
+    if (cur == null) return undefined;
+    cur = cur[s];
+  }
+  return cur;
+}
+
+function setByPath(obj, path, value) {
+  const segs = pathSegments(path);
+  if (!segs.length) return value;
+  let cur = obj;
+  for (let i = 0; i < segs.length - 1; i++) {
+    if (cur[segs[i]] == null) cur[segs[i]] = typeof segs[i + 1] === "number" ? [] : {};
+    cur = cur[segs[i]];
+  }
+  cur[segs[segs.length - 1]] = value;
+  return obj;
+}
+
+// ---------- review queue ----------
+// Only what the policy sends to review, riskiest first. With no feasible
+// policy every field is queued - same safe default as decide().
+const itemKey = (docId, path) => docId + " " + path;
+
+function reviewQueue(docs, threshold) {
+  const items = [];
+  for (const doc of docs) {
+    for (const f of Object.values(doc.fields)) {
+      if (Number.isFinite(threshold) && f.meanLogprob >= threshold) continue;
+      items.push({
+        key: itemKey(doc.id, f.path), docId: doc.id, path: f.path, kind: f.kind,
+        value: getByPath(doc.data, f.path), score: f.meanLogprob,
+        geoProb: f.geoProb, minProb: f.minProb, tokens: f.tokens,
+        context: doc.context,
+      });
+    }
+  }
+  return items.sort((a, b) => a.score - b.score || (a.docId < b.docId ? -1 : 1));
+}
+
+// ---------- label CSV ----------
+function csvCell(v) {
+  const s = String(v);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+// Reviewing produces exactly the labels calibration needs: approve = the value
+// was right (1), edit = it was wrong (0). This is what closes the loop.
+function toLabelCsv(items, decisions) {
+  const rows = ["doc_id,field_path,score,correct"];
+  for (const it of items) {
+    const d = decisions[it.key];
+    if (!d) continue;
+    rows.push([csvCell(it.docId), csvCell(it.path), it.score.toFixed(6),
+               d.action === "approve" ? 1 : 0].join(","));
+  }
+  return rows.join("\n") + "\n";
+}
+
+// Accepts both the 2-column form a user types (`score,correct`) and the
+// 4-column form review exports (`doc_id,field_path,score,correct`), with or
+// without a header - otherwise the flywheel would need a manual edit step.
+function parseLabelCsv(text) {
+  const rows = text.trim().split(/\r?\n+/)
+    .map(l => l.split(/[,\t]/).map(c => c.trim().replace(/^"|"$/g, "")))
+    .filter(r => r.length && r.some(c => c !== ""));
+  if (!rows.length) return { scores: [], correct: [], skipped: 0 };
+
+  let si = -1, ci = -1, start = 0;
+  const head = rows[0].map(h => h.toLowerCase());
+  if (head.includes("score") && (head.includes("correct") || head.includes("label"))) {
+    si = head.indexOf("score");
+    ci = head.includes("correct") ? head.indexOf("correct") : head.indexOf("label");
+    start = 1;
+  }
+
+  const scores = [], correct = [];
+  let skipped = 0;
+  for (let i = start; i < rows.length; i++) {
+    const r = rows[i];
+    // no header: the last two columns are score,correct in both layouts
+    const s = si >= 0 ? r[si] : r[r.length - 2];
+    const c = ci >= 0 ? r[ci] : r[r.length - 1];
+    const sc = parseFloat(s);
+    const cc = /^(1|true|yes)$/i.test(String(c)) ? 1 : /^(0|false|no)$/i.test(String(c)) ? 0 : NaN;
+    if (isNaN(sc) || isNaN(cc)) { skipped++; continue; }
+    scores.push(sc); correct.push(!!cc);
+  }
+  return { scores, correct, skipped };
+}
+
+// ---------- exports ----------
+// Corrected extractions, not the OpenAI envelope: re-emitting logprobs would
+// be bloat nobody consumes.
+function toCorrectedJsonl(docs, decisions, opts) {
+  const o = opts || {};
+  return docs.map(doc => {
+    const data = JSON.parse(JSON.stringify(doc.data));
+    const meta = {};
+    for (const f of Object.values(doc.fields)) {
+      const d = decisions[itemKey(doc.id, f.path)];
+      if (d && d.action === "edit") setByPath(data, f.path, d.value);
+      if (o.meta) meta[f.path] = {
+        score: Number(f.meanLogprob.toFixed(6)),
+        decision: Number.isFinite(o.threshold) && f.meanLogprob >= o.threshold ? "auto" : "review",
+        reviewed: !!d,
+      };
+    }
+    const out = { id: doc.id, data };
+    if (o.meta) out._fieldtrust = meta;
+    return JSON.stringify(out);
+  }).join("\n") + "\n";
+}
+
+function toPolicyJson(fit, fittedAt) {
+  return JSON.stringify({
+    threshold: fit && fit.feasible ? Number(fit.threshold.toFixed(6)) : null,
+    targetPrecision: fit ? fit.targetPrecision : null,
+    delta: fit ? fit.delta : null,
+    nCalib: fit ? fit.nCalib : 0,
+    feasible: !!(fit && fit.feasible),
+    score: "mean_logprob",
+    fittedAt: fittedAt || null,
+  }, null, 2) + "\n";
+}
+
+// ---------- batch identity ----------
+// FNV-1a. Identifies a batch so a reload can offer to resume its session.
+function hashText(text) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, "0");
 }
 </script>
 <script id="fieldtrust-demo">
@@ -847,6 +1080,69 @@ function tokenRow(text, logprob, isChosen) {
     `<span class="tk">${esc(JSON.stringify(text))}</span>` +
     `<span class="tb" style="width:${Math.max(2, p * 90)}px"></span>` +
     `<span class="tp">${(p * 100).toFixed(1)}%</span></div>`;
+}
+</script>
+<script id="fieldtrust-store">
+// Session persistence (docs/DECISIONS.md D-004).
+// IndexedDB is browser-native, so this keeps the "no dependencies, nothing
+// leaves the browser" rule. Every call degrades to a no-op when storage is
+// unavailable (private mode, disabled storage) - losing resume is acceptable,
+// breaking review is not.
+
+const DB_NAME = "fieldtrust";
+const DB_VERSION = 1;
+const STORE = "sessions";
+
+function openDb() {
+  return new Promise(resolve => {
+    let req;
+    try {
+      if (!window.indexedDB) return resolve(null);
+      req = window.indexedDB.open(DB_NAME, DB_VERSION);
+    } catch (e) { return resolve(null); }
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: "batchHash" });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => resolve(null);
+    req.onblocked = () => resolve(null);
+  });
+}
+
+function tx(db, mode, fn) {
+  return new Promise(resolve => {
+    let req;
+    try {
+      req = fn(db.transaction(STORE, mode).objectStore(STORE));
+    } catch (e) { return resolve(null); }
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => resolve(null);
+  });
+}
+
+async function saveSession(session) {
+  const db = await openDb();
+  if (!db) return null;
+  const res = await tx(db, "readwrite", s => s.put(session));
+  db.close();
+  return res;
+}
+
+async function loadSession(batchHash) {
+  const db = await openDb();
+  if (!db) return null;
+  const res = await tx(db, "readonly", s => s.get(batchHash));
+  db.close();
+  return res || null;
+}
+
+async function deleteSession(batchHash) {
+  const db = await openDb();
+  if (!db) return null;
+  const res = await tx(db, "readwrite", s => s.delete(batchHash));
+  db.close();
+  return res;
 }
 </script>
 <script id="fieldtrust-lens">
@@ -1084,30 +1380,28 @@ function refit() {
   $("csvErr").style.display = "none";
   let data = state.calib;
   if ($("tabCsv").classList.contains("on")) {
-    try {
-      const s = [], c = [];
-      $("csvIn").value.trim().split(/\n+/).forEach(line => {
-        const [a, b] = line.split(/[,\t]/);
-        const sc = parseFloat(a), cc = parseInt(b);
-        if (!isNaN(sc) && !isNaN(cc)) { s.push(sc); c.push(!!cc); }
-      });
-      if (s.length < 20) throw new Error("need at least 20 rows");
-      data = { scores: s, correct: c };
-    } catch (e) {
-      $("csvErr").textContent = e.message;
+    // accepts the 2-column form and the 4-column form review exports
+    const parsed = parseLabelCsv($("csvIn").value);
+    if (parsed.scores.length < 20) {
+      $("csvErr").textContent = `need at least 20 usable rows, got ${parsed.scores.length}` +
+        (parsed.skipped ? ` (${parsed.skipped} row(s) unparsable)` : "");
       $("csvErr").style.display = "block";
       return;
     }
+    data = parsed;
   }
   state.fit = fitThreshold(data.scores, data.correct,
     parseFloat($("target").value), parseFloat($("delta").value));
+  state.fittedAt = new Date().toISOString();
   renderThreshold();
   renderBatch();                       // policy moved -> batch decisions move
+  if (state.batch) startReview(true);  // ...the queue is re-cut from the policy
   if (state.lens) renderLens();        // ...and so do the Lens decisions
+  renderExport();
 }
 
 // ---------- batch ----------
-function loadBatch() {
+async function loadBatch() {
   $("batchErr").style.display = "none";
   const text = $("tabBatchDemo").classList.contains("on") ? demoBatch(120) : $("batchIn").value;
   if (!text.trim()) {
@@ -1118,15 +1412,49 @@ function loadBatch() {
   const { docs, errors } = parseBatch(text);
   if (!docs.length) {
     state.batch = null;
+    state.review = null;
     $("batchErr").textContent = errors.length
       ? `No usable responses. First error (line ${errors[0].line}): ${errors[0].message}`
       : "No usable responses found.";
     $("batchErr").style.display = "block";
     renderBatch();
+    renderReview();
+    renderExport();
     return;
   }
-  state.batch = { docs, errors };
+  state.batch = { docs, errors, hash: hashText(text) };
   renderBatch();
+  startReview(false);
+  renderExport();
+  await offerResume(state.batch.hash);
+}
+
+// Same file back again -> offer to pick up where the review left off (D-004).
+async function offerResume(hash) {
+  const bar = $("resumeBar");
+  bar.hidden = true;
+  const session = await loadSession(hash);
+  const n = session && session.corrections ? Object.keys(session.corrections).length : 0;
+  if (!n) return;
+  const when = new Date(session.updatedAt).toLocaleString();
+  bar.hidden = false;
+  bar.innerHTML = `<span>You reviewed <b>${nfmt(n)}</b> field(s) in this batch on ${esc(when)}.</span>` +
+    `<span class="resumeact"><button class="linkbtn" id="resumeYes">Resume</button>` +
+    `<button class="linkbtn" id="resumeNo">Start over</button></span>`;
+  $("resumeYes").addEventListener("click", () => {
+    const r = state.review;
+    for (const it of r.items) if (session.corrections[it.key]) r.decisions[it.key] = session.corrections[it.key];
+    r.idx = nextUndecided(-1);
+    bar.hidden = true;
+    renderReview();
+    renderBatch();
+    renderExport();
+  });
+  $("resumeNo").addEventListener("click", async () => {
+    bar.hidden = true;
+    await deleteSession(hash);
+    startReview(false);
+  });
 }
 
 function renderBatch() {
@@ -1145,15 +1473,57 @@ function renderBatch() {
   $("batchNote").textContent = `${nfmt(docs.length)} responses parsed` +
     (errors.length ? ` · ${nfmt(errors.length)} line(s) skipped (first: line ${errors[0].line})` : "");
 
+  const reviewed = state.review ? Object.keys(state.review.decisions).length : 0;
   const cells = [
     [nfmt(s.nDocs), "responses"],
     [nfmt(s.nFields), "fields"],
     [Number.isFinite(thr) ? pct(s.autoAcceptRate) : "0%", "auto-accept on this batch"],
-    [nfmt(s.nReview), "fields to review"],
+    [`${nfmt(reviewed)} / ${nfmt(s.nReview)}`, "reviewed"],
   ];
   $("batchStats").innerHTML = cells.map(([b, t]) => `<div class="stat"><b>${b}</b><span>${t}</span></div>`).join("");
   renderHist(docs, thr);
   renderPathTable(docs, thr);
+}
+
+// ---------- export (PLAN_v2 3.4) ----------
+function download(filename, text, mime) {
+  const blob = new Blob([text], { type: (mime || "text/plain") + ";charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function renderExport() {
+  const has = !!(state.batch && state.batch.docs.length);
+  $("exportCard").hidden = !has;
+  if (!has) return;
+  const reviewed = state.review ? Object.keys(state.review.decisions).length : 0;
+  $("exportNote").textContent = reviewed
+    ? `${nfmt(reviewed)} decision(s) will be applied.`
+    : "No review decisions yet - the corrected file will match the input, and the label CSV will be empty.";
+}
+
+function exportJsonl() {
+  const thr = state.fit && state.fit.feasible ? state.fit.threshold : NaN;
+  download("fieldtrust-corrected.jsonl",
+    toCorrectedJsonl(state.batch.docs, state.review ? state.review.decisions : {},
+      { meta: $("exportMeta").checked, threshold: thr }),
+    "application/x-ndjson");
+}
+
+function exportLabels() {
+  download("fieldtrust-labels.csv",
+    toLabelCsv(state.review ? state.review.items : [], state.review ? state.review.decisions : {}),
+    "text/csv");
+}
+
+function exportPolicy() {
+  download("fieldtrust-policy.json", toPolicyJson(state.fit, state.fittedAt), "application/json");
 }
 
 function renderHist(docs, thr) {
@@ -1195,6 +1565,238 @@ function renderPathTable(docs, thr) {
   $("pathWrap").innerHTML = `<table><thead><tr><th>Field path</th><th class="num">Count</th>` +
     `<th class="num">Mean conf</th><th class="num">Worst</th><th class="num">Below thr.</th>` +
     `</tr></thead><tbody>${rows}</tbody></table>`;
+}
+</script>
+<script id="fieldtrust-review">
+// Review queue (PLAN_v2 3.3) - one below-threshold field at a time, riskiest
+// first, driven from the keyboard. Reviewing is also how labels get made:
+// approve = the value was right, edit = it was wrong. See toLabelCsv.
+
+function startReview(preserveDecisions) {
+  const thr = state.fit && state.fit.feasible ? state.fit.threshold : NaN;
+  const prev = preserveDecisions && state.review ? state.review.decisions : {};
+  const items = reviewQueue(state.batch.docs, thr);
+  const live = {};
+  // a refit changes the queue; keep decisions for fields that are still in it
+  for (const it of items) if (prev[it.key]) live[it.key] = prev[it.key];
+  state.review = {
+    items, decisions: live, history: [], idx: 0, editing: false,
+    batchHash: state.batch.hash,
+  };
+  state.review.idx = nextUndecided(-1);
+  renderReview();
+}
+
+function nextUndecided(from) {
+  const { items, decisions } = state.review;
+  for (let i = from + 1; i < items.length; i++) if (!decisions[items[i].key]) return i;
+  for (let i = 0; i <= Math.min(from, items.length - 1); i++) if (!decisions[items[i].key]) return i;
+  return Math.max(0, Math.min(from, items.length - 1));
+}
+
+function reviewDone() {
+  const r = state.review;
+  return r && r.items.length > 0 && Object.keys(r.decisions).length >= r.items.length;
+}
+
+// ---------- actions ----------
+function decideCurrent(action, value) {
+  const r = state.review;
+  const it = r.items[r.idx];
+  if (!it) return;
+  r.history.push({ key: it.key, idx: r.idx, prev: r.decisions[it.key] || null });
+  r.decisions[it.key] = value === undefined ? { action } : { action, value };
+  r.editing = false;
+  r.idx = nextUndecided(r.idx);
+  persistReview();
+  renderReview();
+  renderBatch();    // reviewed counts feed the dashboard...
+  renderExport();   // ...and what the export will contain
+}
+
+function undoReview() {
+  const r = state.review;
+  const last = r.history.pop();
+  if (!last) return;
+  if (last.prev) r.decisions[last.key] = last.prev; else delete r.decisions[last.key];
+  r.idx = last.idx;
+  r.editing = false;
+  persistReview();
+  renderReview();
+  renderBatch();
+  renderExport();
+}
+
+function moveReview(delta) {
+  const r = state.review;
+  if (!r.items.length) return;
+  r.idx = Math.max(0, Math.min(r.items.length - 1, r.idx + delta));
+  r.editing = false;
+  renderReview();
+}
+
+function beginEdit() {
+  if (!state.review.items.length) return;
+  state.review.editing = true;
+  renderReview();
+  const input = $("rvEdit");
+  if (input) { input.focus(); input.select(); }
+}
+
+// Strings are edited bare (nobody wants to type quotes); other kinds go
+// through JSON so numbers stay numbers and null stays null.
+function commitEdit() {
+  const r = state.review, it = r.items[r.idx], input = $("rvEdit");
+  if (!input) return;
+  const raw = input.value;
+  let value;
+  if (it.kind === "string") value = raw;
+  else {
+    try { value = JSON.parse(raw); }
+    catch (e) {
+      $("rvEditErr").textContent = "Not valid JSON for a " + it.kind + " field";
+      $("rvEditErr").style.display = "block";
+      return;
+    }
+  }
+  decideCurrent("edit", value);
+}
+
+// ---------- persistence ----------
+function persistReview() {
+  const r = state.review;
+  if (!r || !r.batchHash) return;
+  saveSession({
+    batchHash: r.batchHash,
+    progress: { idx: r.idx, total: r.items.length },
+    corrections: r.decisions,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+// ---------- render ----------
+function renderReview() {
+  const card = $("reviewCard");
+  if (!state.batch || !state.review) { card.hidden = true; return; }
+  card.hidden = false;
+  const r = state.review;
+
+  if (!r.items.length) {
+    $("reviewBody").innerHTML = `<div class="empty">Nothing to review - every field in this batch cleared the threshold.</div>`;
+    return;
+  }
+  if (reviewDone() && !r.reopened) { renderReviewDone(); return; }
+
+  const it = r.items[r.idx];
+  const done = Object.keys(r.decisions).length, total = r.items.length;
+  const decided = r.decisions[it.key];
+  const val = it.kind === "string" ? String(it.value) : JSON.stringify(it.value);
+
+  $("reviewBody").innerHTML = `
+    <div class="rvhead">
+      <span class="rvprog"><b>${nfmt(done)}</b> / ${nfmt(total)} reviewed</span>
+      <span class="rvpos">${nfmt(r.idx + 1)} of ${nfmt(total)} in queue${
+        reviewDone() ? ` · <button class="linkbtn" id="rvSummary">summary</button>` : ""}</span>
+    </div>
+    <div class="rvbar"><div class="rvfill" style="width:${(done / total * 100).toFixed(1)}%"></div></div>
+    <div class="rvitem${decided ? " decided" : ""}">
+      <div class="rvtop"><span class="rvpath">${esc(it.path)}</span><span class="rvdoc">${esc(it.docId)}</span></div>
+      ${r.editing
+        ? `<input class="rvedit" id="rvEdit" value="${esc(val)}" aria-label="Corrected value" spellcheck="false">
+           <div class="err" id="rvEditErr"></div>
+           <div class="rvhint">Enter to save · Esc to cancel</div>`
+        : `<div class="rvvalue" id="rvValue" tabindex="0">${esc(val)}</div>`}
+      <div class="rvconf">geo ${pct(it.geoProb)} · min tok ${pct(it.minProb)} · ${it.tokens.length} tokens</div>
+      <div class="rvtokens">${it.tokens.map(t => tokenRow(t.text, t.logprob, false)).join("")}</div>
+      ${it.context ? `<div class="rvctx"><span class="rvctxlbl">source</span>${esc(it.context)}</div>` : ""}
+      ${decided ? `<div class="rvdecided">already ${decided.action === "approve" ? "approved" : "corrected"}${
+        decided.action === "edit" ? ` to <b>${esc(JSON.stringify(decided.value))}</b>` : ""} - deciding again replaces it</div>` : ""}
+    </div>
+    <div class="rvkeys">
+      <button class="rvbtn" id="rvApprove"><kbd>a</kbd> approve</button>
+      <button class="rvbtn" id="rvEditBtn"><kbd>e</kbd> edit</button>
+      <button class="rvbtn" id="rvPrev"><kbd>k</kbd> prev</button>
+      <button class="rvbtn" id="rvNext"><kbd>j</kbd> next</button>
+      <button class="rvbtn" id="rvUndo"${r.history.length ? "" : " disabled"}><kbd>u</kbd> undo</button>
+    </div>`;
+
+  if (r.editing) {
+    $("rvEdit").addEventListener("keydown", e => {
+      if (e.key === "Enter") { e.preventDefault(); commitEdit(); }
+      if (e.key === "Escape") { e.preventDefault(); r.editing = false; renderReview(); }
+    });
+  } else {
+    bindPop($("rvValue"), () => `<div class="pth">${esc(it.path)}</div>` +
+      it.tokens.map(t => tokenRow(t.text, t.logprob, false)).join("") +
+      `<div class="st">geo ${pct(it.geoProb)} · min ${pct(it.minProb)}</div>`);
+  }
+  $("rvApprove").addEventListener("click", () => decideCurrent("approve"));
+  $("rvEditBtn").addEventListener("click", beginEdit);
+  $("rvPrev").addEventListener("click", () => moveReview(-1));
+  $("rvNext").addEventListener("click", () => moveReview(1));
+  $("rvUndo").addEventListener("click", undoReview);
+  if ($("rvSummary")) $("rvSummary").addEventListener("click", () => {
+    r.reopened = false; renderReview();
+  });
+}
+
+function renderReviewDone() {
+  const r = state.review;
+  const s = batchSummary(state.batch.docs, state.fit && state.fit.feasible ? state.fit.threshold : NaN);
+  const edits = Object.values(r.decisions).filter(d => d.action === "edit").length;
+  const share = s.nFields ? r.items.length / s.nFields : 0;
+  const guarantee = state.fit && state.fit.feasible
+    ? `The other ${nfmt(s.nFields - r.items.length)} auto-accepted with precision guaranteed at &ge; ${pct(state.fit.targetPrecision, 0)}.`
+    : `No feasible policy is fitted, so nothing auto-accepted.`;
+
+  $("reviewBody").innerHTML = `
+    <div class="rvdone">
+      <div class="rvdonehd">Queue cleared</div>
+      <p>You reviewed <b>${nfmt(r.items.length)}</b> of ${nfmt(s.nFields)} fields (${pct(share)}). ${guarantee}</p>
+      <p class="rvdonesub">${nfmt(r.items.length - edits)} approved · ${nfmt(edits)} corrected. That is a labeled set - feed it back and the next batch needs less review.</p>
+      <div class="rvdoneact">
+        <button class="btn" id="rvRefit">Refit threshold with these labels</button>
+        <button class="btn ghost" id="rvBack">Back to queue</button>
+      </div>
+    </div>`;
+  $("rvRefit").addEventListener("click", refitFromReview);
+  // reopening lets you walk back through decisions after clearing the queue
+  $("rvBack").addEventListener("click", () => {
+    state.review.reopened = true;
+    state.review.idx = 0;
+    renderReview();
+  });
+}
+
+// ---------- the flywheel (PLAN_v2 1.1) ----------
+// Review output is calibration input. One click, no file round-trip.
+function refitFromReview() {
+  const csv = toLabelCsv(state.review.items, state.review.decisions);
+  $("csvIn").value = csv;
+  $("csvIn").style.display = "block";
+  $("tabCsv").classList.add("on");
+  $("tabSynth").classList.remove("on");
+  refit();
+  const body = $("reviewBody");
+  if (body.scrollIntoView) body.scrollIntoView({ block: "nearest" });
+}
+
+// ---------- keyboard (PLAN_v2 3.3) ----------
+function reviewKeydown(e) {
+  if (!state.review || !state.review.items.length) return;
+  if (currentView() !== "workspace") return;
+  if (state.review.editing) return;            // the input owns the keyboard
+  if (reviewDone()) return;
+  const t = e.target;
+  if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable)) return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+  const k = e.key.toLowerCase();
+  const act = { a: () => decideCurrent("approve"), e: beginEdit, u: undoReview,
+                j: () => moveReview(1), k: () => moveReview(-1) }[k];
+  if (!act) return;
+  e.preventDefault();
+  act();
 }
 </script>
 <script id="fieldtrust-app">
@@ -1263,6 +1865,11 @@ $("batchFile").addEventListener("change", e => {
   reader.readAsText(file);
 });
 $("loadBatch").addEventListener("click", loadBatch);
+$("expJsonl").addEventListener("click", exportJsonl);
+$("expLabels").addEventListener("click", exportLabels);
+$("expPolicy").addEventListener("click", exportPolicy);
+$("exportMeta").addEventListener("change", renderExport);
+document.addEventListener("keydown", reviewKeydown);
 
 tabPair("tabSynth", "tabCsv",
   () => { $("csvIn").style.display = "none"; refit(); },

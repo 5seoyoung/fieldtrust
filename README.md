@@ -33,7 +33,11 @@ The app has two halves.
 **Workspace** - operate on a batch.
 
 1. **Calibrate** - fit a threshold on a small labeled history (200-500 rows of `score,correct`). Set a target precision and confidence level. FieldTrust picks the most permissive threshold whose **Wilson lower confidence bound** on auto-accept precision meets your target, and plots the risk-coverage curve. Drag the target slider and watch coverage and routing flip in real time - that's the cost of a guarantee, made visible.
-2. **Load a batch** - drop in JSONL (one response per line) to see the confidence distribution of every field against your threshold, and which schema paths are structurally weak. "`$.date` is below threshold 78% of the time" is a prompt bug you can act on.
+2. **Load a batch** - drop in JSONL (one response per line) to see the confidence distribution of every field against your threshold, and which schema paths are structurally weak. "`$.date` is below threshold 68% of the time" is a prompt bug you can act on.
+3. **Review** - only the fields below your threshold, riskiest first, one at a time, from the keyboard (`a` approve, `e` edit, `j`/`k` move, `u` undo). Progress persists in IndexedDB, so closing the tab does not lose it.
+4. **Export** - corrected JSONL, a policy JSON, and a label CSV.
+
+That last export is the point: reviewing *is* labelling. Approve means the value was right, edit means it was wrong, so the label CSV that falls out feeds straight back into the calibrator. One click on the done screen refits the threshold from your own review. **The more you use it, the less there is to review.**
 
 Everything runs client-side in a single static HTML page. No server, no account, no data leaving your machine - usable even for medical or financial documents that can't touch a SaaS.
 
@@ -103,9 +107,9 @@ The Python package is the algorithmic reference. Core algorithm changes must kee
 ## Roadmap
 
 - **v0.2** (shipped) - Lens (structured + free-text modes) and Workspace (JSONL batch, confidence distribution, weakest-field rollup)
-- **v0.3** (next) - review queue: keyboard-driven review of only the below-threshold fields, session persistence, and export of corrected JSONL + a label CSV that feeds straight back into the calibrator
-- **benchmark** (parallel track) - CORD receipts: AUROC of per-field scores vs. actual extraction errors
-- **v0.4** - live API mode (key stays in memory), policy export shared between web app and Python
+- **v0.3** (shipped) - keyboard review queue, IndexedDB session persistence, the three exports, and the one-click refit that closes the loop
+- **benchmark** (next, parallel track) - CORD receipts: AUROC of per-field scores vs. actual extraction errors
+- **v0.4** - live API mode (key stays in memory), policy JSON imported by the Python package
 - **v1.0** - self-consistency fallback for providers without logprobs, Learn-then-Test multi-threshold risk control
 
 See [docs/PLAN_v2.md](docs/PLAN_v2.md) for the full plan.

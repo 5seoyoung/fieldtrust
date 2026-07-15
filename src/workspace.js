@@ -54,30 +54,28 @@ function refit() {
   $("csvErr").style.display = "none";
   let data = state.calib;
   if ($("tabCsv").classList.contains("on")) {
-    try {
-      const s = [], c = [];
-      $("csvIn").value.trim().split(/\n+/).forEach(line => {
-        const [a, b] = line.split(/[,\t]/);
-        const sc = parseFloat(a), cc = parseInt(b);
-        if (!isNaN(sc) && !isNaN(cc)) { s.push(sc); c.push(!!cc); }
-      });
-      if (s.length < 20) throw new Error("need at least 20 rows");
-      data = { scores: s, correct: c };
-    } catch (e) {
-      $("csvErr").textContent = e.message;
+    // accepts the 2-column form and the 4-column form review exports
+    const parsed = parseLabelCsv($("csvIn").value);
+    if (parsed.scores.length < 20) {
+      $("csvErr").textContent = `need at least 20 usable rows, got ${parsed.scores.length}` +
+        (parsed.skipped ? ` (${parsed.skipped} row(s) unparsable)` : "");
       $("csvErr").style.display = "block";
       return;
     }
+    data = parsed;
   }
   state.fit = fitThreshold(data.scores, data.correct,
     parseFloat($("target").value), parseFloat($("delta").value));
+  state.fittedAt = new Date().toISOString();
   renderThreshold();
   renderBatch();                       // policy moved -> batch decisions move
+  if (state.batch) startReview(true);  // ...the queue is re-cut from the policy
   if (state.lens) renderLens();        // ...and so do the Lens decisions
+  renderExport();
 }
 
 // ---------- batch ----------
-function loadBatch() {
+async function loadBatch() {
   $("batchErr").style.display = "none";
   const text = $("tabBatchDemo").classList.contains("on") ? demoBatch(120) : $("batchIn").value;
   if (!text.trim()) {
@@ -88,15 +86,49 @@ function loadBatch() {
   const { docs, errors } = parseBatch(text);
   if (!docs.length) {
     state.batch = null;
+    state.review = null;
     $("batchErr").textContent = errors.length
       ? `No usable responses. First error (line ${errors[0].line}): ${errors[0].message}`
       : "No usable responses found.";
     $("batchErr").style.display = "block";
     renderBatch();
+    renderReview();
+    renderExport();
     return;
   }
-  state.batch = { docs, errors };
+  state.batch = { docs, errors, hash: hashText(text) };
   renderBatch();
+  startReview(false);
+  renderExport();
+  await offerResume(state.batch.hash);
+}
+
+// Same file back again -> offer to pick up where the review left off (D-004).
+async function offerResume(hash) {
+  const bar = $("resumeBar");
+  bar.hidden = true;
+  const session = await loadSession(hash);
+  const n = session && session.corrections ? Object.keys(session.corrections).length : 0;
+  if (!n) return;
+  const when = new Date(session.updatedAt).toLocaleString();
+  bar.hidden = false;
+  bar.innerHTML = `<span>You reviewed <b>${nfmt(n)}</b> field(s) in this batch on ${esc(when)}.</span>` +
+    `<span class="resumeact"><button class="linkbtn" id="resumeYes">Resume</button>` +
+    `<button class="linkbtn" id="resumeNo">Start over</button></span>`;
+  $("resumeYes").addEventListener("click", () => {
+    const r = state.review;
+    for (const it of r.items) if (session.corrections[it.key]) r.decisions[it.key] = session.corrections[it.key];
+    r.idx = nextUndecided(-1);
+    bar.hidden = true;
+    renderReview();
+    renderBatch();
+    renderExport();
+  });
+  $("resumeNo").addEventListener("click", async () => {
+    bar.hidden = true;
+    await deleteSession(hash);
+    startReview(false);
+  });
 }
 
 function renderBatch() {
@@ -115,15 +147,57 @@ function renderBatch() {
   $("batchNote").textContent = `${nfmt(docs.length)} responses parsed` +
     (errors.length ? ` · ${nfmt(errors.length)} line(s) skipped (first: line ${errors[0].line})` : "");
 
+  const reviewed = state.review ? Object.keys(state.review.decisions).length : 0;
   const cells = [
     [nfmt(s.nDocs), "responses"],
     [nfmt(s.nFields), "fields"],
     [Number.isFinite(thr) ? pct(s.autoAcceptRate) : "0%", "auto-accept on this batch"],
-    [nfmt(s.nReview), "fields to review"],
+    [`${nfmt(reviewed)} / ${nfmt(s.nReview)}`, "reviewed"],
   ];
   $("batchStats").innerHTML = cells.map(([b, t]) => `<div class="stat"><b>${b}</b><span>${t}</span></div>`).join("");
   renderHist(docs, thr);
   renderPathTable(docs, thr);
+}
+
+// ---------- export (PLAN_v2 3.4) ----------
+function download(filename, text, mime) {
+  const blob = new Blob([text], { type: (mime || "text/plain") + ";charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function renderExport() {
+  const has = !!(state.batch && state.batch.docs.length);
+  $("exportCard").hidden = !has;
+  if (!has) return;
+  const reviewed = state.review ? Object.keys(state.review.decisions).length : 0;
+  $("exportNote").textContent = reviewed
+    ? `${nfmt(reviewed)} decision(s) will be applied.`
+    : "No review decisions yet - the corrected file will match the input, and the label CSV will be empty.";
+}
+
+function exportJsonl() {
+  const thr = state.fit && state.fit.feasible ? state.fit.threshold : NaN;
+  download("fieldtrust-corrected.jsonl",
+    toCorrectedJsonl(state.batch.docs, state.review ? state.review.decisions : {},
+      { meta: $("exportMeta").checked, threshold: thr }),
+    "application/x-ndjson");
+}
+
+function exportLabels() {
+  download("fieldtrust-labels.csv",
+    toLabelCsv(state.review ? state.review.items : [], state.review ? state.review.decisions : {}),
+    "text/csv");
+}
+
+function exportPolicy() {
+  download("fieldtrust-policy.json", toPolicyJson(state.fit, state.fittedAt), "application/json");
 }
 
 function renderHist(docs, thr) {
