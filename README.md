@@ -102,9 +102,13 @@ The Python package is the algorithmic reference. Core algorithm changes must kee
 
 ## Roadmap
 
-- **v0.1** - CORD receipt benchmark: AUROC of per-field scores vs. actual extraction errors
-- **v0.2** - live API mode (key stays in memory), batch review queue, policy export (JSON threshold config shared between web app and Python)
+- **v0.2** (shipped) - Lens (structured + free-text modes) and Workspace (JSONL batch, confidence distribution, weakest-field rollup)
+- **v0.3** (next) - review queue: keyboard-driven review of only the below-threshold fields, session persistence, and export of corrected JSONL + a label CSV that feeds straight back into the calibrator
+- **benchmark** (parallel track) - CORD receipts: AUROC of per-field scores vs. actual extraction errors
+- **v0.4** - live API mode (key stays in memory), policy export shared between web app and Python
 - **v1.0** - self-consistency fallback for providers without logprobs, Learn-then-Test multi-threshold risk control
+
+See [docs/PLAN_v2.md](docs/PLAN_v2.md) for the full plan.
 
 ## License
 
