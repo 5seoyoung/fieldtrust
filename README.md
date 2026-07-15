@@ -1,6 +1,6 @@
 # FieldTrust
 
-**A review policy engine for LLM structured extraction.**
+**See where your LLM output can be trusted, and route only what needs review to humans.**
 Per-field confidence, calibrated thresholds, and statistically guaranteed auto-accept precision - all in your browser.
 
 [![test](https://github.com/5seoyoung/fieldtrust/actions/workflows/test.yml/badge.svg)](https://github.com/5seoyoung/fieldtrust/actions/workflows/test.yml)
@@ -88,7 +88,9 @@ pytest tests/test_python.py
 python python/examples/demo.py
 ```
 
-The web app is a single dependency-free `index.html`; the Python package is the algorithmic reference. Core algorithm changes must keep both test suites green (see [docs/DECISIONS.md](docs/DECISIONS.md)).
+The web app ships as a single dependency-free `index.html`, assembled from `src/` by `npm run build` (a 20-line string-substitution script - no bundler). Edit `src/`, never `index.html` directly; `npm test` rebuilds before running, and CI fails if the committed `index.html` drifts from `src/`.
+
+The Python package is the algorithmic reference. Core algorithm changes must keep both test suites green (see [docs/DECISIONS.md](docs/DECISIONS.md)).
 
 ## Roadmap
 

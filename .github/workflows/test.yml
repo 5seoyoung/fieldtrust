@@ -24,4 +24,6 @@ jobs:
         with:
           node-version: "22"
       - run: npm ci
+      # the committed index.html must match what src/ assembles to
+      - run: npm run build:check
       - run: npm test

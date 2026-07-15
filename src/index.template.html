@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FieldTrust - which fields can you trust?</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* INJECT:ui.css */
+</style>
+</head>
+<body>
+<header><div class="wrap hd">
+  <div class="wordmark">Field<span class="tick">Trust</span></div>
+  <div class="tag">Per-field confidence &amp; review routing for LLM structured outputs</div>
+  <div class="badge">runs 100% in your browser</div>
+</div></header>
+
+<div class="wrap"><main>
+<section>
+  <div class="card">
+    <div class="eyebrow">01 · Inspect</div>
+    <h2>Extraction response</h2>
+    <p class="sub">Paste an OpenAI chat-completion response captured with <code>logprobs: true</code> (ideally <code>top_logprobs: 2</code>), or start from the sample.</p>
+    <div class="tabs">
+      <button class="tab on" id="tabSample">Sample receipt</button>
+      <button class="tab" id="tabPaste">Paste response</button>
+    </div>
+    <textarea id="respIn" spellcheck="false" aria-label="Response JSON"></textarea>
+    <button class="btn" id="analyze">Analyze fields</button>
+    <div class="err" id="respErr"></div>
+  </div>
+
+  <div class="card">
+    <div class="eyebrow">02 · Calibrate</div>
+    <h2>Review policy</h2>
+    <p class="sub">Fit a threshold on labeled history - pairs of <code>score,correct</code> - so every auto-accepted field meets your precision target with statistical confidence.</p>
+    <div class="tabs">
+      <button class="tab on" id="tabSynth">Demo set (n=500)</button>
+      <button class="tab" id="tabCsv">Paste CSV</button>
+    </div>
+    <textarea id="csvIn" spellcheck="false" style="display:none;min-height:110px" placeholder="-0.12,1&#10;-1.40,0&#10;-0.03,1&#10;…  (score,correct)"></textarea>
+    <div class="ctl"><label for="target">Target precision</label><input type="range" id="target" min="0.80" max="0.99" step="0.01" value="0.95"><output id="targetOut">95%</output></div>
+    <div class="ctl"><label for="delta">Confidence 1−δ</label>
+      <select id="delta"><option value="0.10">90%</option><option value="0.05" selected>95%</option><option value="0.01">99%</option></select>
+    </div>
+    <button class="btn ghost" id="fit">Refit threshold</button>
+    <div class="err" id="csvErr"></div>
+  </div>
+</section>
+
+<section>
+  <div class="card">
+    <div class="eyebrow">Result · Annotated output</div>
+    <div class="jsonhero" id="hero"></div>
+  </div>
+
+  <div class="card">
+    <div class="eyebrow">Result · Routing decisions</div>
+    <div id="tableWrap"></div>
+  </div>
+
+  <div class="card">
+    <div class="eyebrow">Result · Guaranteed threshold</div>
+    <div class="warn" id="warn"></div>
+    <div class="stats" id="stats"></div>
+    <div class="strip" id="strip"><div class="fill" id="stripFill"></div><div class="lbl" id="stripLblA"></div><div class="lbl" id="stripLblR" style="right:0"></div></div>
+    <div class="striplegend"><span>auto-accept</span><span>human review</span></div>
+    <div id="chart"></div>
+  </div>
+</section>
+</main>
+
+<footer class="wrap">
+  All computation happens client-side - nothing you paste leaves this page. Threshold guarantee: one-sided Wilson lower bound on auto-accept precision. · <span id="yr"></span> FieldTrust
+</footer>
+</div>
+
+<div class="pop" id="pop" role="tooltip"></div>
+
+<script id="fieldtrust-core">
+// INJECT:core.js
+</script>
+<script>
+// INJECT:ui.js
+</script>
+</body>
+</html>
