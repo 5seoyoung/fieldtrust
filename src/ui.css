@@ -79,8 +79,9 @@ td.num{text-align:right}th.num{text-align:right}
 .pill.auto{color:var(--certain);background:var(--certain-soft)}
 .pill.review{color:var(--alert);background:var(--alert-soft)}
 
-.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0 14px}
-@media(max-width:560px){.stats{grid-template-columns:repeat(2,1fr)}}
+/* auto-fit so a stat row degrades to 2x2 in a narrow column instead of
+   wrapping every label onto three lines */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:10px;margin:12px 0 14px}
 .stat{border:1px solid var(--line);border-radius:8px;padding:10px 12px}
 .stat b{display:block;font-family:var(--disp);font-size:19px;font-weight:700;letter-spacing:-.02em}
 .stat span{font-size:11px;color:var(--muted)}

@@ -89,8 +89,9 @@ td.num{text-align:right}th.num{text-align:right}
 .pill.auto{color:var(--certain);background:var(--certain-soft)}
 .pill.review{color:var(--alert);background:var(--alert-soft)}
 
-.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0 14px}
-@media(max-width:560px){.stats{grid-template-columns:repeat(2,1fr)}}
+/* auto-fit so a stat row degrades to 2x2 in a narrow column instead of
+   wrapping every label onto three lines */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:10px;margin:12px 0 14px}
 .stat{border:1px solid var(--line);border-radius:8px;padding:10px 12px}
 .stat b{display:block;font-family:var(--disp);font-size:19px;font-weight:700;letter-spacing:-.02em}
 .stat span{font-size:11px;color:var(--muted)}
@@ -295,7 +296,10 @@ input[type=file]:focus-visible{outline:2px solid var(--certain);outline-offset:2
     <button class="btn ghost" id="fit">Refit threshold</button>
     <div class="err" id="csvErr"></div>
   </div>
+</section>
 
+<section>
+  <!-- the policy panel needs the wide column: 4 stats + the risk-coverage curve -->
   <div class="card">
     <div class="eyebrow">Policy · Guaranteed threshold</div>
     <div class="warn" id="warn"></div>
@@ -304,9 +308,7 @@ input[type=file]:focus-visible{outline:2px solid var(--certain);outline-offset:2
     <div class="striplegend"><span>auto-accept</span><span>human review</span></div>
     <div id="chart"></div>
   </div>
-</section>
 
-<section>
   <div class="card">
     <div class="eyebrow">Dashboard · This batch</div>
     <div class="stats" id="batchStats"></div>
