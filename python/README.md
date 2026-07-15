@@ -21,7 +21,7 @@ $.date     geo_prob=0.339  -> HUMAN REVIEW   # 2024-02-31, the model was guessin
    vLLM, or anything that returns token strings + logprobs.
 2. **Per-field scores** - geometric-mean probability, min token probability,
    top-2 margin (when `top_logprobs` is requested).
-3. **Guaranteed thresholding** - on a small calibration set (~200–500
+3. **Guaranteed thresholding** - on a small calibration set (~200-500
    labeled fields), finds the most permissive threshold whose *lower
    confidence bound* on auto-accept precision meets your target
    (e.g. ≥95% with 95% confidence).
@@ -66,7 +66,7 @@ mask = thr.auto_accept(new_scores)   # True = auto-accept, False = human review
   punctuation/key tokens are near-deterministic and dilute the signal.
   We score only value content by default.
 - **Why Wilson bound?** Dependency-free and tight enough for MVP.
-  Roadmap: exact Clopper–Pearson, then Learn-then-Test for multi-threshold
+  Roadmap: exact Clopper-Pearson, then Learn-then-Test for multi-threshold
   risk control.
 - **No logprobs available (e.g. Anthropic)?** Roadmap: self-consistency
   fallback - sample k extractions, per-field agreement rate as the score.

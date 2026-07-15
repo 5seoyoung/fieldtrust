@@ -18,9 +18,20 @@ header{border-bottom:1px solid var(--line);background:var(--surface)}
 .tag{color:var(--muted);font-size:13.5px}
 .badge{margin-left:auto;font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;
   color:var(--certain);background:var(--certain-soft);border:1px solid #BFDDD6;border-radius:999px;padding:4px 11px}
+.wordmark{text-decoration:none;color:var(--ink)}
 
-main{display:grid;grid-template-columns:390px 1fr;gap:22px;padding:26px 0 60px}
-@media(max-width:940px){main{grid-template-columns:1fr}}
+.nav{display:flex;gap:4px}
+.nav a{font-family:var(--mono);font-size:12.5px;text-decoration:none;color:var(--muted);
+  padding:5px 11px;border-radius:7px;border:1px solid transparent}
+.nav a:hover{color:var(--ink);background:#EEF3F1}
+.nav a.on{color:var(--ink);border-color:var(--line);background:#EEF3F1;font-weight:600}
+.nav a:focus-visible{outline:2px solid var(--certain);outline-offset:2px}
+
+/* hash routing: exactly one view is `.on` at a time */
+.view{display:none}
+.view.on{display:grid;grid-template-columns:390px 1fr;gap:22px;padding:26px 0 60px}
+.view.on.single,#view-about.on{grid-template-columns:minmax(0,760px);justify-content:center}
+@media(max-width:940px){.view.on{grid-template-columns:1fr}}
 
 .card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px 20px}
 .card+.card{margin-top:18px}
@@ -82,4 +93,74 @@ td.num{text-align:right}th.num{text-align:right}
 svg text{font-family:var(--mono);font-size:9.5px;fill:var(--muted)}
 
 footer{border-top:1px solid var(--line);padding:16px 0 30px;color:var(--muted);font-size:12.5px}
+
+/* ---------- lens: mode switch ---------- */
+.modebar{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap}
+.modelabel{color:var(--muted);font-size:13px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.segbtn{font-family:var(--mono);font-size:11.5px;padding:5px 10px;border:0;background:none;
+  cursor:pointer;color:var(--muted);border-right:1px solid var(--line)}
+.segbtn:last-child{border-right:0}
+.segbtn.on{background:var(--ink);color:#fff}
+.segbtn:focus-visible{outline:2px solid var(--certain);outline-offset:-2px}
+.modenote{font-family:var(--mono);font-size:11px;color:var(--muted)}
+
+.policynote{font-size:12.5px;color:var(--muted);margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #ECF1EF}
+.policynote b{font-family:var(--mono);color:var(--ink)}
+.cta .sub{margin-bottom:0}
+.cta .btn{margin-top:12px;display:inline-block;text-decoration:none}
+
+/* ---------- lens: honesty banner (PLAN_v2 2.2 - states the limit, not a pitch) ---------- */
+.honesty{background:#FBF3E4;border:1px solid #E5D3A8;border-radius:8px;padding:11px 13px;margin-bottom:12px}
+.htext{color:#6E5210;font-size:12.5px;line-height:1.6}
+.hact{display:flex;gap:14px;margin-top:8px}
+.linkbtn{background:none;border:0;padding:0;cursor:pointer;font-family:var(--mono);font-size:11.5px;
+  color:#7A5A10;text-decoration:underline;text-underline-offset:2px}
+.linkbtn:focus-visible{outline:2px solid var(--caution);outline-offset:2px}
+
+/* ---------- lens: token heatmap ---------- */
+/* --a (alpha) carries magnitude; hue + underline carry the band, so the
+   signal survives without colour vision. */
+.heatmap{font-family:var(--mono);font-size:13.5px;line-height:2.1;white-space:pre-wrap;
+  word-break:break-word;background:#FBFDFC;border:1px solid var(--line);border-radius:8px;padding:16px 18px}
+.tkn{border-radius:3px;padding:1px 0;cursor:default}
+.tkn:focus-visible{outline:2px solid var(--certain);outline-offset:1px}
+.tkn.hi{background:rgba(11,122,102,var(--a))}
+.tkn.mid{background:rgba(180,121,15,var(--a));text-decoration:underline dotted;text-underline-offset:3px}
+.tkn.lo{background:rgba(178,58,43,var(--a));text-decoration:underline wavy;text-underline-offset:3px}
+
+.ramp{display:flex;align-items:center;gap:14px;margin-top:10px;flex-wrap:wrap;
+  font-size:11.5px;color:var(--muted);font-family:var(--mono)}
+.rampitem{display:inline-flex;align-items:center;gap:5px}
+.swatch{width:13px;height:13px;border-radius:3px;display:inline-block}
+.swatch.hi{background:rgba(11,122,102,.18)}
+.swatch.mid{background:rgba(180,121,15,.45);text-decoration:underline dotted}
+.swatch.lo{background:rgba(178,58,43,.8)}
+.rampnote{margin-left:auto}
+
+/* ---------- lens: least certain passages ---------- */
+.span{border:1px solid var(--line);border-left-width:3px;border-radius:7px;padding:9px 11px;margin-bottom:8px}
+.span.hi{border-left-color:var(--certain)}
+.span.mid{border-left-color:var(--caution)}
+.span.lo{border-left-color:var(--alert)}
+.spanhd{display:flex;align-items:baseline;gap:10px;margin-bottom:4px}
+.rank{font-family:var(--disp);font-weight:700;font-size:13px}
+.spanstat{font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+.spantext{font-size:13px;line-height:1.55}
+
+/* ---------- workspace ---------- */
+.note{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin-top:8px}
+.empty{border:1px dashed var(--line);border-radius:8px;padding:22px;text-align:center;
+  color:var(--muted);font-size:13px}
+input[type=file]{font-family:var(--mono);font-size:11.5px;margin-bottom:10px;width:100%;color:var(--muted)}
+input[type=file]:focus-visible{outline:2px solid var(--certain);outline-offset:2px}
+.pop .trow.chosen .tk{color:#fff;font-weight:600}
+.pop .trow.chosen .tb{background:#EDF3F1}
+
+/* ---------- about ---------- */
+.prose h2{font-size:19px;margin-bottom:10px}
+.prose h3{font-family:var(--disp);font-size:14px;margin:16px 0 5px}
+.prose p{font-size:13.5px;color:#3E4E4A;margin-bottom:9px}
+.aboutlinks{margin-top:16px;padding-top:12px;border-top:1px solid #ECF1EF;font-family:var(--mono);font-size:12px}
+
 @media(prefers-reduced-motion:no-preference){.val{transition:background .25s}.strip .fill{transition:width .25s}}

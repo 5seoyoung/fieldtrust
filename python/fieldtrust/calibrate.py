@@ -11,7 +11,7 @@ Two components, both dependency-light (numpy only):
    target, with confidence 1 - delta. Fields below t are routed to
    human review.
 
-   This is the pragmatic MVP guarantee; swap in Clopper–Pearson or
+   This is the pragmatic MVP guarantee; swap in Clopper-Pearson or
    Learn-then-Test (Angelopoulos et al.) later for exact/finite-sample
    risk control.
 """

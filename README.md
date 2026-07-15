@@ -23,9 +23,17 @@ $.date     geo_prob=0.339  -> HUMAN REVIEW   # "2024-02-31" - the model was gues
 
 ## What it does
 
-1. **Inspect** - paste an OpenAI chat-completion response captured with `logprobs: true`. FieldTrust reconstructs the completion from tokens, maps every token to its JSON field (`$.items[0].name`) with a position-aware parser, and renders the output with per-field confidence coloring and token-level popovers.
-2. **Calibrate** - upload a small labeled history (200–500 rows of `score,correct`). Set a target precision and confidence level.
-3. **Decide** - FieldTrust finds the most permissive threshold whose **Wilson lower confidence bound** on auto-accept precision meets your target, and shows the risk–coverage curve. Drag the target slider and watch coverage and field routing flip in real time - that's the cost of a guarantee, made visible.
+The app has two halves.
+
+**Lens** - inspect a single response. Paste an OpenAI chat-completion captured with `logprobs: true` and FieldTrust reconstructs the completion from its tokens.
+
+- *Structured mode* (auto-detected for JSON): every token is mapped to its JSON path (`$.items[0].name`) by a position-aware parser, then each field is scored, coloured, and routed. Hover a value to see the tokens behind it.
+- *Free-text mode* (auto-detected for prose): a token heatmap plus the alternatives the model weighed at each position. Exploration only - no accept/review decision is made here, because a low token probability can mean "many ways to word this" rather than "wrong".
+
+**Workspace** - operate on a batch.
+
+1. **Calibrate** - fit a threshold on a small labeled history (200-500 rows of `score,correct`). Set a target precision and confidence level. FieldTrust picks the most permissive threshold whose **Wilson lower confidence bound** on auto-accept precision meets your target, and plots the risk-coverage curve. Drag the target slider and watch coverage and routing flip in real time - that's the cost of a guarantee, made visible.
+2. **Load a batch** - drop in JSONL (one response per line) to see the confidence distribution of every field against your threshold, and which schema paths are structurally weak. "`$.date` is below threshold 78% of the time" is a prompt bug you can act on.
 
 Everything runs client-side in a single static HTML page. No server, no account, no data leaving your machine - usable even for medical or financial documents that can't touch a SaaS.
 

@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FieldTrust - which fields can you trust?</title>
+<title>FieldTrust - see where your LLM output can be trusted</title>
+<meta name="description" content="See where your LLM output can be trusted, and route only what needs review to humans. Per-field confidence and guaranteed auto-accept precision, entirely in your browser.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -27,9 +28,20 @@ header{border-bottom:1px solid var(--line);background:var(--surface)}
 .tag{color:var(--muted);font-size:13.5px}
 .badge{margin-left:auto;font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;
   color:var(--certain);background:var(--certain-soft);border:1px solid #BFDDD6;border-radius:999px;padding:4px 11px}
+.wordmark{text-decoration:none;color:var(--ink)}
 
-main{display:grid;grid-template-columns:390px 1fr;gap:22px;padding:26px 0 60px}
-@media(max-width:940px){main{grid-template-columns:1fr}}
+.nav{display:flex;gap:4px}
+.nav a{font-family:var(--mono);font-size:12.5px;text-decoration:none;color:var(--muted);
+  padding:5px 11px;border-radius:7px;border:1px solid transparent}
+.nav a:hover{color:var(--ink);background:#EEF3F1}
+.nav a.on{color:var(--ink);border-color:var(--line);background:#EEF3F1;font-weight:600}
+.nav a:focus-visible{outline:2px solid var(--certain);outline-offset:2px}
+
+/* hash routing: exactly one view is `.on` at a time */
+.view{display:none}
+.view.on{display:grid;grid-template-columns:390px 1fr;gap:22px;padding:26px 0 60px}
+.view.on.single,#view-about.on{grid-template-columns:minmax(0,760px);justify-content:center}
+@media(max-width:940px){.view.on{grid-template-columns:1fr}}
 
 .card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px 20px}
 .card+.card{margin-top:18px}
@@ -91,29 +103,180 @@ td.num{text-align:right}th.num{text-align:right}
 svg text{font-family:var(--mono);font-size:9.5px;fill:var(--muted)}
 
 footer{border-top:1px solid var(--line);padding:16px 0 30px;color:var(--muted);font-size:12.5px}
+
+/* ---------- lens: mode switch ---------- */
+.modebar{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap}
+.modelabel{color:var(--muted);font-size:13px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.segbtn{font-family:var(--mono);font-size:11.5px;padding:5px 10px;border:0;background:none;
+  cursor:pointer;color:var(--muted);border-right:1px solid var(--line)}
+.segbtn:last-child{border-right:0}
+.segbtn.on{background:var(--ink);color:#fff}
+.segbtn:focus-visible{outline:2px solid var(--certain);outline-offset:-2px}
+.modenote{font-family:var(--mono);font-size:11px;color:var(--muted)}
+
+.policynote{font-size:12.5px;color:var(--muted);margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #ECF1EF}
+.policynote b{font-family:var(--mono);color:var(--ink)}
+.cta .sub{margin-bottom:0}
+.cta .btn{margin-top:12px;display:inline-block;text-decoration:none}
+
+/* ---------- lens: honesty banner (PLAN_v2 2.2 - states the limit, not a pitch) ---------- */
+.honesty{background:#FBF3E4;border:1px solid #E5D3A8;border-radius:8px;padding:11px 13px;margin-bottom:12px}
+.htext{color:#6E5210;font-size:12.5px;line-height:1.6}
+.hact{display:flex;gap:14px;margin-top:8px}
+.linkbtn{background:none;border:0;padding:0;cursor:pointer;font-family:var(--mono);font-size:11.5px;
+  color:#7A5A10;text-decoration:underline;text-underline-offset:2px}
+.linkbtn:focus-visible{outline:2px solid var(--caution);outline-offset:2px}
+
+/* ---------- lens: token heatmap ---------- */
+/* --a (alpha) carries magnitude; hue + underline carry the band, so the
+   signal survives without colour vision. */
+.heatmap{font-family:var(--mono);font-size:13.5px;line-height:2.1;white-space:pre-wrap;
+  word-break:break-word;background:#FBFDFC;border:1px solid var(--line);border-radius:8px;padding:16px 18px}
+.tkn{border-radius:3px;padding:1px 0;cursor:default}
+.tkn:focus-visible{outline:2px solid var(--certain);outline-offset:1px}
+.tkn.hi{background:rgba(11,122,102,var(--a))}
+.tkn.mid{background:rgba(180,121,15,var(--a));text-decoration:underline dotted;text-underline-offset:3px}
+.tkn.lo{background:rgba(178,58,43,var(--a));text-decoration:underline wavy;text-underline-offset:3px}
+
+.ramp{display:flex;align-items:center;gap:14px;margin-top:10px;flex-wrap:wrap;
+  font-size:11.5px;color:var(--muted);font-family:var(--mono)}
+.rampitem{display:inline-flex;align-items:center;gap:5px}
+.swatch{width:13px;height:13px;border-radius:3px;display:inline-block}
+.swatch.hi{background:rgba(11,122,102,.18)}
+.swatch.mid{background:rgba(180,121,15,.45);text-decoration:underline dotted}
+.swatch.lo{background:rgba(178,58,43,.8)}
+.rampnote{margin-left:auto}
+
+/* ---------- lens: least certain passages ---------- */
+.span{border:1px solid var(--line);border-left-width:3px;border-radius:7px;padding:9px 11px;margin-bottom:8px}
+.span.hi{border-left-color:var(--certain)}
+.span.mid{border-left-color:var(--caution)}
+.span.lo{border-left-color:var(--alert)}
+.spanhd{display:flex;align-items:baseline;gap:10px;margin-bottom:4px}
+.rank{font-family:var(--disp);font-weight:700;font-size:13px}
+.spanstat{font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+.spantext{font-size:13px;line-height:1.55}
+
+/* ---------- workspace ---------- */
+.note{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin-top:8px}
+.empty{border:1px dashed var(--line);border-radius:8px;padding:22px;text-align:center;
+  color:var(--muted);font-size:13px}
+input[type=file]{font-family:var(--mono);font-size:11.5px;margin-bottom:10px;width:100%;color:var(--muted)}
+input[type=file]:focus-visible{outline:2px solid var(--certain);outline-offset:2px}
+.pop .trow.chosen .tk{color:#fff;font-weight:600}
+.pop .trow.chosen .tb{background:#EDF3F1}
+
+/* ---------- about ---------- */
+.prose h2{font-size:19px;margin-bottom:10px}
+.prose h3{font-family:var(--disp);font-size:14px;margin:16px 0 5px}
+.prose p{font-size:13.5px;color:#3E4E4A;margin-bottom:9px}
+.aboutlinks{margin-top:16px;padding-top:12px;border-top:1px solid #ECF1EF;font-family:var(--mono);font-size:12px}
+
 @media(prefers-reduced-motion:no-preference){.val{transition:background .25s}.strip .fill{transition:width .25s}}
 </style>
 </head>
 <body>
 <header><div class="wrap hd">
-  <div class="wordmark">Field<span class="tick">Trust</span></div>
-  <div class="tag">Per-field confidence &amp; review routing for LLM structured outputs</div>
+  <a class="wordmark" href="#lens">Field<span class="tick">Trust</span></a>
+  <nav class="nav" id="nav">
+    <a href="#lens" data-view="lens">Lens</a>
+    <a href="#workspace" data-view="workspace">Workspace</a>
+    <a href="#about" data-view="about">About</a>
+  </nav>
   <div class="badge">runs 100% in your browser</div>
 </div></header>
 
-<div class="wrap"><main>
+<div class="wrap">
+
+<!-- ===================== LENS ===================== -->
+<main class="view" id="view-lens">
 <section>
   <div class="card">
-    <div class="eyebrow">01 · Inspect</div>
+    <div class="eyebrow">01 · Inspect one response</div>
     <h2>Extraction response</h2>
-    <p class="sub">Paste an OpenAI chat-completion response captured with <code>logprobs: true</code> (ideally <code>top_logprobs: 2</code>), or start from the sample.</p>
+    <p class="sub">Paste an OpenAI chat-completion response captured with <code>logprobs: true</code> (ideally <code>top_logprobs: 2</code>), or start from a sample.</p>
     <div class="tabs">
       <button class="tab on" id="tabSample">Sample receipt</button>
+      <button class="tab" id="tabProse">Sample prose</button>
       <button class="tab" id="tabPaste">Paste response</button>
     </div>
     <textarea id="respIn" spellcheck="false" aria-label="Response JSON"></textarea>
-    <button class="btn" id="analyze">Analyze fields</button>
+    <div class="modebar">
+      <span class="modelabel">Mode</span>
+      <div class="seg" id="modeSeg" role="group" aria-label="Analysis mode">
+        <button class="segbtn on" data-mode="auto" aria-pressed="true">Auto</button>
+        <button class="segbtn" data-mode="structured" aria-pressed="false">Structured</button>
+        <button class="segbtn" data-mode="freetext" aria-pressed="false">Free text</button>
+      </div>
+      <span class="modenote" id="modeNote"></span>
+    </div>
+    <button class="btn" id="analyze">Analyze</button>
     <div class="err" id="respErr"></div>
+  </div>
+
+  <div class="card cta">
+    <div class="eyebrow">Next step</div>
+    <h2>Got more than one response?</h2>
+    <p class="sub">Upload a JSONL batch to see which fields are structurally weak across your whole pipeline, and review only what falls below your threshold.</p>
+    <a class="btn ghost" href="#workspace" id="ctaWorkspace">Open Workspace</a>
+  </div>
+</section>
+
+<section>
+  <!-- structured mode results -->
+  <div id="structuredResults">
+    <div class="card">
+      <div class="eyebrow">Result · Annotated output</div>
+      <div class="policynote" id="policyNote"></div>
+      <div class="jsonhero" id="hero"></div>
+    </div>
+    <div class="card">
+      <div class="eyebrow">Result · Routing decisions</div>
+      <div id="tableWrap"></div>
+    </div>
+  </div>
+
+  <!-- free-text mode results -->
+  <div id="freetextResults" hidden>
+    <div class="card">
+      <div class="eyebrow">Result · Token heatmap</div>
+      <div class="honesty" id="honesty" role="note"></div>
+      <div class="heatmap" id="heatmap"></div>
+      <div class="ramp">
+        <span class="rampitem"><span class="swatch hi"></span>confident</span>
+        <span class="rampitem"><span class="swatch mid"></span>some competition</span>
+        <span class="rampitem"><span class="swatch lo"></span>many alternatives</span>
+        <span class="rampnote">hover a token to see what else the model considered</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="eyebrow">Result · Least certain passages</div>
+      <p class="sub">Sentences ranked by mean token logprob. Exploration only - no auto-accept decision is made for free text.</p>
+      <div id="spansWrap"></div>
+    </div>
+  </div>
+</section>
+</main>
+
+<!-- ===================== WORKSPACE ===================== -->
+<main class="view" id="view-workspace">
+<section>
+  <div class="card">
+    <div class="eyebrow">01 · Batch</div>
+    <h2>Upload responses</h2>
+    <p class="sub">One JSON per line (JSONL): either a bare OpenAI response, or <code>{"id": "doc-1", "response": {...}}</code>. Bad lines are skipped and counted.</p>
+    <div class="tabs">
+      <button class="tab on" id="tabBatchDemo">Demo batch (n=120)</button>
+      <button class="tab" id="tabBatchPaste">Paste / upload</button>
+    </div>
+    <div id="batchInputs" hidden>
+      <input type="file" id="batchFile" accept=".jsonl,.json,.txt" aria-label="JSONL file">
+      <textarea id="batchIn" spellcheck="false" style="min-height:110px" placeholder='{"id":"doc-1","response":{...}}'></textarea>
+    </div>
+    <button class="btn" id="loadBatch">Load batch</button>
+    <div class="err" id="batchErr"></div>
+    <div class="note" id="batchNote"></div>
   </div>
 
   <div class="card">
@@ -124,29 +287,17 @@ footer{border-top:1px solid var(--line);padding:16px 0 30px;color:var(--muted);f
       <button class="tab on" id="tabSynth">Demo set (n=500)</button>
       <button class="tab" id="tabCsv">Paste CSV</button>
     </div>
-    <textarea id="csvIn" spellcheck="false" style="display:none;min-height:110px" placeholder="-0.12,1&#10;-1.40,0&#10;-0.03,1&#10;…  (score,correct)"></textarea>
+    <textarea id="csvIn" spellcheck="false" style="display:none;min-height:110px" placeholder="-0.12,1&#10;-1.40,0&#10;-0.03,1&#10;...  (score,correct)"></textarea>
     <div class="ctl"><label for="target">Target precision</label><input type="range" id="target" min="0.80" max="0.99" step="0.01" value="0.95"><output id="targetOut">95%</output></div>
-    <div class="ctl"><label for="delta">Confidence 1−δ</label>
+    <div class="ctl"><label for="delta">Confidence 1-delta</label>
       <select id="delta"><option value="0.10">90%</option><option value="0.05" selected>95%</option><option value="0.01">99%</option></select>
     </div>
     <button class="btn ghost" id="fit">Refit threshold</button>
     <div class="err" id="csvErr"></div>
   </div>
-</section>
-
-<section>
-  <div class="card">
-    <div class="eyebrow">Result · Annotated output</div>
-    <div class="jsonhero" id="hero"></div>
-  </div>
 
   <div class="card">
-    <div class="eyebrow">Result · Routing decisions</div>
-    <div id="tableWrap"></div>
-  </div>
-
-  <div class="card">
-    <div class="eyebrow">Result · Guaranteed threshold</div>
+    <div class="eyebrow">Policy · Guaranteed threshold</div>
     <div class="warn" id="warn"></div>
     <div class="stats" id="stats"></div>
     <div class="strip" id="strip"><div class="fill" id="stripFill"></div><div class="lbl" id="stripLblA"></div><div class="lbl" id="stripLblR" style="right:0"></div></div>
@@ -154,12 +305,55 @@ footer{border-top:1px solid var(--line);padding:16px 0 30px;color:var(--muted);f
     <div id="chart"></div>
   </div>
 </section>
+
+<section>
+  <div class="card">
+    <div class="eyebrow">Dashboard · This batch</div>
+    <div class="stats" id="batchStats"></div>
+    <div class="empty" id="batchEmpty">Load a batch to see how your policy plays out across it.</div>
+  </div>
+
+  <div class="card" id="histCard" hidden>
+    <div class="eyebrow">Dashboard · Confidence distribution</div>
+    <p class="sub">Every field in the batch by mean token logprob. The line is your current threshold: everything left of it goes to review.</p>
+    <div id="hist"></div>
+  </div>
+
+  <div class="card" id="pathCard" hidden>
+    <div class="eyebrow">Dashboard · Weakest fields</div>
+    <p class="sub">Aggregated by schema path (array indices collapsed), most below-threshold first.</p>
+    <div id="pathWrap"></div>
+  </div>
+</section>
 </main>
+
+<!-- ===================== ABOUT ===================== -->
+<main class="view" id="view-about">
+<section class="prose">
+  <div class="card">
+    <div class="eyebrow">About</div>
+    <h2>See where your LLM output can be trusted</h2>
+    <p>When you extract structured data with an LLM at scale, some outputs are silently wrong and you do not know which. FieldTrust turns the model's own token probabilities into a per-field confidence score, then uses a small labeled sample to find the threshold where auto-accepting is statistically safe.</p>
+    <h3>Lens</h3>
+    <p>Inspect a single response. In structured mode every JSON field is scored and routed; in free-text mode you get a token heatmap and the alternatives the model considered. Free text is exploration only - no accept/review decision is made there.</p>
+    <h3>Workspace</h3>
+    <p>Load a JSONL batch to see the confidence distribution, find which schema paths are structurally weak, and fit a review policy that meets your precision target.</p>
+    <h3>The guarantee</h3>
+    <p>The threshold is chosen so that the one-sided <strong>Wilson lower confidence bound</strong> on auto-accept precision meets your target. "Precision was 98% on the calibration set" is an observation; "precision is at least 95% with 95% confidence" is a guarantee. The cost is coverage: raise the target and the auto-accept rate falls. That trade is the whole product.</p>
+    <h3>Privacy</h3>
+    <p>Everything runs client-side in this single HTML file. Nothing you paste or upload leaves your browser - there is no server to send it to.</p>
+    <h3>Limits</h3>
+    <p>Token probabilities are a good but imperfect error signal, and they are strongest under schema-constrained decoding. Providers that do not expose logprobs are not supported yet (a self-consistency fallback is on the roadmap). The guarantee holds for data drawn from the same distribution as your calibration set.</p>
+    <p class="aboutlinks"><a href="https://github.com/5seoyoung/fieldtrust">Source on GitHub</a> · MIT licensed</p>
+  </div>
+</section>
+</main>
+
+</div>
 
 <footer class="wrap">
   All computation happens client-side - nothing you paste leaves this page. Threshold guarantee: one-sided Wilson lower bound on auto-accept precision. · <span id="yr"></span> FieldTrust
 </footer>
-</div>
 
 <div class="pop" id="pop" role="tooltip"></div>
 
@@ -305,7 +499,12 @@ function tokensFromOpenAI(input) {
     let second = null;
     const others = (item.top_logprobs || []).filter(c => c.token !== item.token);
     if (others.length) second = Math.max(...others.map(c => c.logprob));
-    return { text: item.token, logprob: item.logprob, secondLogprob: second };
+    // `alternatives` keeps the full runner-up list for the free-text lens,
+    // which shows what else the model considered at this position.
+    const alternatives = others
+      .map(c => ({ text: c.token, logprob: c.logprob }))
+      .sort((a, b) => b.logprob - a.logprob);
+    return { text: item.token, logprob: item.logprob, secondLogprob: second, alternatives };
   });
 }
 
@@ -370,13 +569,163 @@ function fitThreshold(scores, correct, targetPrecision = 0.95, delta = 0.05) {
     precisionLowerBound: best.lcb, curve,
   };
 }
+
+// ---------- lens mode detection ----------
+// Structured mode needs a JSON object we can actually pull fields out of;
+// anything else (prose, refusals, chain-of-thought) is free text.
+function detectMode(tokens) {
+  try {
+    return Object.keys(scoreFields(tokens).fields).length ? "structured" : "freetext";
+  } catch (e) {
+    return "freetext";
+  }
+}
+
+// ---------- free-text scoring ----------
+// Char spans of sentence-ish chunks: split after . ! ? or on newlines.
+function segmentSentences(text) {
+  const out = [];
+  let start = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    const isBreak = ch === "\n" || ((ch === "." || ch === "!" || ch === "?") &&
+      // not a decimal point / ellipsis mid-number
+      !/[0-9]/.test(text[i + 1] || ""));
+    if (!isBreak) continue;
+    let end = i + 1;
+    while (end < text.length && ".!?\"')]".includes(text[end])) end++;
+    if (text.slice(start, end).trim()) out.push({ start, end });
+    start = end;
+  }
+  if (text.slice(start).trim()) out.push({ start, end: text.length });
+  return out;
+}
+
+// Per-sentence aggregate logprobs, for ranking the shakiest passages.
+function scoreSentences(tokens) {
+  const full = tokens.map(t => t.text).join("");
+  const offsets = [];
+  let p = 0;
+  for (const t of tokens) { offsets.push([p, p + t.text.length]); p += t.text.length; }
+
+  return segmentSentences(full).map(({ start, end }) => {
+    const lps = [], toks = [];
+    tokens.forEach((tok, i) => {
+      const [ts, te] = offsets[i];
+      if (ts < end && te > start) { lps.push(tok.logprob); toks.push(tok); }
+    });
+    if (!lps.length) return null;
+    const sum = lps.reduce((a, b) => a + b, 0);
+    return {
+      text: full.slice(start, end), start, end, nTokens: lps.length,
+      meanLogprob: sum / lps.length, minLogprob: Math.min(...lps),
+      geoProb: Math.exp(sum / lps.length), tokens: toks,
+    };
+  }).filter(Boolean);
+}
+
+// ---------- batch (JSONL) ----------
+// Each line is either a bare OpenAI response or {id, response}. Bad lines are
+// collected rather than thrown, so one broken row cannot kill a 500-row batch.
+function parseBatch(text) {
+  const docs = [], errors = [];
+  text.split("\n").forEach((line, i) => {
+    if (!line.trim()) return;
+    try {
+      const obj = JSON.parse(line);
+      const response = obj && obj.response ? obj.response : obj;
+      const id = (obj && obj.id != null) ? String(obj.id) : `line-${i + 1}`;
+      const tokens = tokensFromOpenAI(response);
+      const { fields } = scoreFields(tokens);
+      if (!Object.keys(fields).length) throw new Error("no JSON fields found");
+      docs.push({ id, line: i + 1, tokens, fields });
+    } catch (e) {
+      errors.push({ line: i + 1, message: e.message });
+    }
+  });
+  return { docs, errors };
+}
+
+// $.items[0].name -> $.items[].name, so array elements aggregate together.
+function normalizePath(path) {
+  return path.replace(/\[\d+\]/g, "[]");
+}
+
+// Per-path rollup: which field of your schema is structurally weak?
+function aggregateByPath(docs, threshold) {
+  const byPath = new Map();
+  for (const doc of docs) {
+    for (const f of Object.values(doc.fields)) {
+      const key = normalizePath(f.path);
+      if (!byPath.has(key)) byPath.set(key, []);
+      byPath.get(key).push(f);
+    }
+  }
+  const rows = [];
+  for (const [path, fs] of byPath) {
+    const sum = fs.reduce((a, f) => a + f.meanLogprob, 0);
+    const below = Number.isFinite(threshold)
+      ? fs.filter(f => f.meanLogprob < threshold).length : 0;
+    rows.push({
+      path, count: fs.length,
+      meanLogprob: sum / fs.length,
+      meanGeoProb: fs.reduce((a, f) => a + f.geoProb, 0) / fs.length,
+      minGeoProb: Math.min(...fs.map(f => f.geoProb)),
+      belowCount: below, belowRate: below / fs.length,
+    });
+  }
+  // weakest first: most below-threshold, then lowest confidence
+  return rows.sort((a, b) => b.belowRate - a.belowRate || a.meanLogprob - b.meanLogprob);
+}
+
+// Equal-width bins over `values`. Loop-based (not Math.min(...values)) so a
+// 10k-field batch cannot blow the call stack.
+function histogramBins(values, nBins = 24) {
+  if (!values.length) return [];
+  let min = Infinity, max = -Infinity;
+  for (const v of values) { if (v < min) min = v; if (v > max) max = v; }
+  if (min === max) { min -= 0.5; max += 0.5; }
+  const width = (max - min) / nBins;
+  const bins = Array.from({ length: nBins }, (_, i) => ({
+    x0: min + i * width, x1: min + (i + 1) * width, count: 0,
+  }));
+  for (const v of values) {
+    let i = Math.floor((v - min) / width);
+    if (i >= nBins) i = nBins - 1;
+    if (i < 0) i = 0;
+    bins[i].count++;
+  }
+  return bins;
+}
+
+// Rollup of a batch against the current policy.
+function batchSummary(docs, threshold) {
+  let nFields = 0, nBelow = 0;
+  for (const doc of docs) {
+    for (const f of Object.values(doc.fields)) {
+      nFields++;
+      if (!Number.isFinite(threshold) || f.meanLogprob < threshold) nBelow++;
+    }
+  }
+  return {
+    nDocs: docs.length, nFields, nReview: nBelow, nAuto: nFields - nBelow,
+    autoAcceptRate: nFields ? (nFields - nBelow) / nFields : 0,
+  };
+}
 </script>
-<script>
-// ---------- demo data ----------
+<script id="fieldtrust-demo">
+// Demo fixtures. Everything here is deterministic (seeded PRNG) so the
+// jsdom tests can assert on exact numbers.
+
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
 function demoCalib(){const r=mulberry32(7),s=[],c=[];for(let i=0;i<500;i++){const sc=-3*r();s.push(sc);c.push(r()<1/(1+Math.exp(-(3*sc+5.5))))}return{scores:s,correct:c}}
 
+// OpenAI-shaped token with an optional runner-up logprob.
 function tok(t,lp,second){const o={token:t,logprob:lp};if(second!=null)o.top_logprobs=[{token:t,logprob:lp},{token:"·",logprob:second}];return o}
+// OpenAI-shaped token with named alternatives: tokA("July", -0.9, [["June", -1.4]]).
+function tokA(t,lp,alts){return{token:t,logprob:lp,top_logprobs:[{token:t,logprob:lp},...alts.map(([x,l])=>({token:x,logprob:l}))]}}
+
+// ---------- structured sample (receipt) ----------
 const DEMO_RESPONSE={choices:[{message:{content:""},logprobs:{content:[
  tok('{"',-0.0005),tok('vendor',-0.0008),tok('":',-0.0006),tok(' "',-0.001),
  tok('Star',-0.012,-5.4),tok('bucks',-0.018,-5.1),tok('",',-0.0009),
@@ -396,184 +745,546 @@ const DEMO_RESPONSE={choices:[{message:{content:""},logprobs:{content:[
  tok('}]',-0.001),tok('}',-0.0006)
 ]}}]};
 
-// ---------- state ----------
-let calib=demoCalib();
-let fitRes=null;
-let fields={};
+// ---------- free-text sample (prose) ----------
+// A summary where the model is fluent throughout but genuinely unsure about
+// two facts - exactly the case the honesty banner is about.
+const DEMO_PROSE={choices:[{message:{content:""},logprobs:{content:[
+ tokA("The",-0.05,[["Apollo",-3.4]]),tokA(" Apollo",-0.02,[[" the",-4.6]]),tokA(" ",-0.01,[]),
+ tokA("11",-0.03,[["1",-4.1]]),tokA(" mission",-0.18,[[" program",-2.4],[" flight",-3.1]]),
+ tokA(" landed",-0.31,[[" touched",-2.2],[" reached",-2.9]]),tokA(" on",-0.09,[[" upon",-3.3]]),
+ tokA(" the",-0.02,[]),tokA(" Moon",-0.01,[[" lunar",-5.2]]),tokA(" on",-0.22,[[" in",-2.1]]),
+ tokA(" July",-0.94,[[" June",-1.28],[" August",-2.6]]),tokA(" ",-0.02,[]),
+ tokA("20",-1.32,[["21",-1.41],["16",-2.8]]),tokA(",",-0.03,[]),tokA(" ",-0.01,[]),
+ tokA("196",-0.02,[["197",-4.9]]),tokA("9",-0.01,[["8",-5.5]]),tokA(".",-0.08,[]),
+ tokA(" The",-0.24,[[" Its",-2.3],[" Crew",-3.0]]),tokA(" crew",-0.11,[[" mission",-2.7]]),
+ tokA(" consisted",-0.71,[[" included",-1.1],[" was",-2.4]]),tokA(" of",-0.01,[]),
+ tokA(" Neil",-0.06,[[" Commander",-3.2]]),tokA(" Armstrong",-0.01,[]),tokA(",",-0.04,[]),
+ tokA(" Buzz",-0.05,[[" Edwin",-3.4]]),tokA(" Aldrin",-0.01,[]),tokA(",",-0.12,[[" and",-2.2]]),
+ tokA(" and",-0.02,[]),tokA(" Michael",-0.04,[[" Mike",-3.6]]),tokA(" Collins",-0.01,[]),tokA(".",-0.05,[]),
+ tokA(" The",-0.35,[[" It",-1.6],[" Armstrong",-2.9]]),tokA(" mission",-0.29,[[" flight",-1.9]]),
+ tokA(" lasted",-0.42,[[" took",-1.8],[" spanned",-2.5]]),
+ tokA(" approximately",-1.51,[[" about",-0.86],[" roughly",-2.2]]),tokA(" ",-0.02,[]),
+ tokA("8",-1.64,[["9",-1.12],["12",-2.4]]),tokA(" days",-0.07,[[" hours",-3.8]]),tokA(".",-0.04,[])
+]}}]};
 
-// ---------- helpers ----------
-const $=id=>document.getElementById(id);
-const esc=s=>s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-const pct=x=>(x*100).toFixed(1)+"%";
-
-function decide(f){return fitRes&&fitRes.feasible&&f.meanLogprob>=fitRes.threshold?"auto":"review"}
-
-// ---------- annotated JSON (signature) ----------
-function renderHero(){
-  // rebuild from the token concatenation captured in analyze()
-  const raw=window.__fullText;
-  const js=raw.indexOf("{"),je=raw.lastIndexOf("}")+1;
-  const data=JSON.parse(raw.slice(js,je));
-  $("hero").innerHTML=renderNode(data,"$",0);
-  bindPopovers();
+// ---------- demo batch (JSONL) ----------
+// 120 receipts from a pipeline where `date` is structurally weak and
+// `currency` is nearly always certain.
+function demoBatch(n){
+  const r=mulberry32(11),VEND=["Starbucks","Blue Bottle","Peet's Coffee","Costa","Tim Hortons"],lines=[];
+  for(let i=0;i<(n||120);i++){
+    const T=[],add=(text,scale)=>{const l=-r()*scale;T.push(tok(text,l,l-0.4-r()*3.5))},
+      lit=text=>T.push(tok(text,-0.001));
+    const mm=String(1+Math.floor(r()*12)).padStart(2,"0"),dd=String(1+Math.floor(r()*31)).padStart(2,"0");
+    // separators ride along with the value tokens, the way a BPE tokenizer
+    // emits "-02-" - keeping them separate would dilute the field score with
+    // near-deterministic punctuation.
+    lit('{"vendor": "');add(VEND[Math.floor(r()*VEND.length)],0.34);
+    lit('", "date": "');add("2024",0.06);add("-"+mm,2.6);add("-"+dd,2.9);
+    lit('", "total": ');add(String(3+Math.floor(r()*40)),0.55);add("."+String(10+Math.floor(r()*89)),0.95);
+    lit(', "currency": "');add(r()<0.85?"USD":"EUR",0.07);lit('"}');
+    lines.push(JSON.stringify({id:`doc-${i+1}`,response:{choices:[{logprobs:{content:T}}]}}));
+  }
+  return lines.join("\n");
 }
-function renderNode(v,path,ind){
-  const pad="  ".repeat(ind),pad2="  ".repeat(ind+1);
-  if(Array.isArray(v)){
-    if(!v.length)return"[]";
-    return"[\n"+v.map((x,i)=>pad2+renderNode(x,`${path}[${i}]`,ind+1)).join(",\n")+"\n"+pad+"]";
-  }
-  if(v!==null&&typeof v==="object"){
-    const keys=Object.keys(v);
-    if(!keys.length)return"{}";
-    return"{\n"+keys.map(k=>`${pad2}<span class="jk">"${esc(k)}"</span>: `+renderNode(v[k],`${path}.${k}`,ind+1)).join(",\n")+"\n"+pad+"}";
-  }
-  const lit=esc(JSON.stringify(v));
-  const f=fields[path];
-  if(!f)return lit;
-  const d=decide(f);
-  return`<span class="val ${d}" data-path="${esc(path)}" tabindex="0">${lit}<span class="bar" style="width:${Math.max(6,f.geoProb*100)}%"></span></span>`;
+</script>
+<script id="fieldtrust-shared">
+// Shared app state, formatting helpers, and the token popover used by both
+// the structured field view and the free-text heatmap.
+
+const state = {
+  calib: null,   // {scores, correct} - calibration set
+  fit: null,     // fitThreshold() result - the active review policy
+  lens: null,    // {mode, tokens, fields, fullText} - single response in Lens
+  batch: null,   // {docs, errors} - loaded JSONL batch in Workspace
+  honestyDismissed: false,
+};
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const pct = (x, d = 1) => (x * 100).toFixed(d) + "%";
+const nfmt = n => n.toLocaleString("en-US");
+
+// A field is auto-accepted only when a feasible policy says so. With no
+// policy fitted, everything routes to review - the safe default.
+function decide(f) {
+  return state.fit && state.fit.feasible && f.meanLogprob >= state.fit.threshold ? "auto" : "review";
+}
+
+// Probability -> confidence band. Shared by the heatmap and the ramp legend so
+// the colours in the legend always mean what the tokens mean.
+function band(p) {
+  return p >= 0.85 ? "hi" : p >= 0.5 ? "mid" : "lo";
 }
 
 // ---------- popover ----------
-function bindPopovers(){
-  const pop=$("pop");
-  document.querySelectorAll(".val").forEach(el=>{
-    const show=()=>{
-      const f=fields[el.dataset.path];if(!f)return;
-      const rows=f.tokens.map(t=>{
-        const p=Math.exp(t.logprob);
-        return`<div class="trow"><span class="tk">${esc(JSON.stringify(t.text))}</span><span class="tb" style="width:${Math.max(2,p*90)}px"></span><span class="tp">${(p*100).toFixed(1)}%</span></div>`;
-      }).join("");
-      const mg=f.meanMargin!=null?f.meanMargin.toFixed(2):"–";
-      pop.innerHTML=`<div class="pth">${esc(f.path)}</div>${rows}<div class="st">geo ${pct(f.geoProb)} · min ${pct(f.minProb)} · margin ${mg}</div>`;
-      const r=el.getBoundingClientRect();
-      pop.style.display="block";
-      pop.style.left=Math.min(r.left,window.innerWidth-320)+"px";
-      pop.style.top=(r.bottom+8)+"px";
-    };
-    const hide=()=>{pop.style.display="none"};
-    el.addEventListener("mouseenter",show);el.addEventListener("mouseleave",hide);
-    el.addEventListener("focus",show);el.addEventListener("blur",hide);
-    el.addEventListener("click",e=>{e.stopPropagation();show()});
+function hidePop() { $("pop").style.display = "none"; }
+
+function showPop(el, html) {
+  const pop = $("pop");
+  pop.innerHTML = html;
+  pop.style.display = "block";
+  const r = el.getBoundingClientRect();
+  pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 320)) + "px";
+  pop.style.top = (r.bottom + 8) + "px";
+}
+
+// buildHtml is called lazily on hover/focus so popovers cost nothing to bind.
+function bindPop(el, buildHtml) {
+  const show = () => { const h = buildHtml(); if (h) showPop(el, h); };
+  el.addEventListener("mouseenter", show);
+  el.addEventListener("mouseleave", hidePop);
+  el.addEventListener("focus", show);
+  el.addEventListener("blur", hidePop);
+  el.addEventListener("click", e => { e.stopPropagation(); show(); });
+}
+
+function tokenRow(text, logprob, isChosen) {
+  const p = Math.exp(logprob);
+  return `<div class="trow${isChosen ? " chosen" : ""}">` +
+    `<span class="tk">${esc(JSON.stringify(text))}</span>` +
+    `<span class="tb" style="width:${Math.max(2, p * 90)}px"></span>` +
+    `<span class="tp">${(p * 100).toFixed(1)}%</span></div>`;
+}
+</script>
+<script id="fieldtrust-lens">
+// Lens - inspect a single response.
+//   structured mode: annotated JSON + routing decisions (needs a policy)
+//   free-text mode : token heatmap + least certain passages (exploration only)
+
+// ---------- structured: annotated JSON ----------
+function renderHero() {
+  const raw = state.lens.fullText;
+  const js = raw.indexOf("{"), je = raw.lastIndexOf("}") + 1;
+  $("hero").innerHTML = renderNode(JSON.parse(raw.slice(js, je)), "$", 0);
+  document.querySelectorAll("#hero .val").forEach(el => bindPop(el, () => {
+    const f = state.lens.fields[el.dataset.path];
+    return f ? fieldPopHtml(f) : null;
+  }));
+}
+
+function renderNode(v, path, ind) {
+  const pad = "  ".repeat(ind), pad2 = "  ".repeat(ind + 1);
+  if (Array.isArray(v)) {
+    if (!v.length) return "[]";
+    return "[\n" + v.map((x, i) => pad2 + renderNode(x, `${path}[${i}]`, ind + 1)).join(",\n") + "\n" + pad + "]";
+  }
+  if (v !== null && typeof v === "object") {
+    const keys = Object.keys(v);
+    if (!keys.length) return "{}";
+    return "{\n" + keys.map(k => `${pad2}<span class="jk">"${esc(k)}"</span>: ` + renderNode(v[k], `${path}.${k}`, ind + 1)).join(",\n") + "\n" + pad + "}";
+  }
+  const lit = esc(JSON.stringify(v));
+  const f = state.lens.fields[path];
+  if (!f) return lit;
+  return `<span class="val ${decide(f)}" data-path="${esc(path)}" tabindex="0">${lit}` +
+    `<span class="bar" style="width:${Math.max(6, f.geoProb * 100)}%"></span></span>`;
+}
+
+function fieldPopHtml(f) {
+  const rows = f.tokens.map(t => tokenRow(t.text, t.logprob, false)).join("");
+  const mg = f.meanMargin != null ? f.meanMargin.toFixed(2) : "-";
+  return `<div class="pth">${esc(f.path)}</div>${rows}` +
+    `<div class="st">geo ${pct(f.geoProb)} · min ${pct(f.minProb)} · margin ${mg}</div>`;
+}
+
+// ---------- structured: routing table ----------
+function renderTable() {
+  const rows = Object.values(state.lens.fields)
+    .sort((a, b) => a.meanLogprob - b.meanLogprob)
+    .map(f => {
+      const d = decide(f);
+      const mg = f.meanMargin != null ? f.meanMargin.toFixed(2) : "-";
+      return `<tr><td>${esc(f.path)}</td><td class="num">${pct(f.geoProb)}</td>` +
+        `<td class="num">${pct(f.minProb)}</td><td class="num">${mg}</td>` +
+        `<td><span class="pill ${d}">${d === "auto" ? "AUTO-ACCEPT" : "REVIEW"}</span></td></tr>`;
+    }).join("");
+  $("tableWrap").innerHTML = `<table><thead><tr><th>Field</th><th class="num">Conf (geo)</th>` +
+    `<th class="num">Min tok</th><th class="num">Margin</th><th>Decision</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+// Where the decisions on this screen come from - the policy lives in Workspace.
+function renderPolicyNote() {
+  const f = state.fit;
+  $("policyNote").innerHTML = f && f.feasible
+    ? `Routing with the policy fitted in <a href="#workspace">Workspace</a>: auto-accept at mean logprob &ge; <b>${f.threshold.toFixed(3)}</b>, ` +
+      `for precision &ge; ${pct(f.targetPrecision, 0)} at ${pct(1 - f.delta, 0)} confidence.`
+    : `No feasible policy yet - every field routes to review. Fit one in <a href="#workspace">Workspace</a>.`;
+}
+
+// ---------- free text: honesty banner ----------
+// Wording is fixed by docs/PLAN_v2.md 2.2 and deliberately not marketing copy:
+// it states the limit of the signal rather than hiding it.
+const HONESTY_TEXT =
+  "A low token probability does not mean “this is wrong” - it can mean “there were many ways to word this.” " +
+  "The signal that correlates most strongly with factual errors comes from schema-constrained structured output.";
+
+function renderHonesty() {
+  const el = $("honesty");
+  if (state.honestyDismissed) { el.hidden = true; return; }
+  el.hidden = false;
+  el.innerHTML = `<div class="htext">${HONESTY_TEXT}</div>` +
+    `<div class="hact"><button class="linkbtn" id="honestyStructured">Use structured mode</button>` +
+    `<button class="linkbtn" id="honestyDismiss">Got it</button></div>`;
+  $("honestyDismiss").addEventListener("click", () => {
+    state.honestyDismissed = true;
+    el.hidden = true;
   });
-  document.addEventListener("click",()=>{pop.style.display="none"});
+  $("honestyStructured").addEventListener("click", () => setMode("structured"));
 }
 
-// ---------- table ----------
-function renderTable(){
-  const rows=Object.values(fields).sort((a,b)=>a.meanLogprob-b.meanLogprob).map(f=>{
-    const d=decide(f);
-    const mg=f.meanMargin!=null?f.meanMargin.toFixed(2):"–";
-    return`<tr><td>${esc(f.path)}</td><td class="num">${pct(f.geoProb)}</td><td class="num">${pct(f.minProb)}</td><td class="num">${mg}</td><td><span class="pill ${d}">${d==="auto"?"AUTO-ACCEPT":"REVIEW"}</span></td></tr>`;
+// ---------- free text: token heatmap ----------
+function renderHeatmap() {
+  const toks = state.lens.tokens;
+  $("heatmap").innerHTML = toks.map((t, i) => {
+    const p = Math.exp(t.logprob);
+    // alpha carries the magnitude, band carries hue + underline style, so the
+    // signal survives without colour vision (PLAN_v2 2.2).
+    const a = Math.min(0.95, 0.1 + 0.85 * (1 - p)).toFixed(3);
+    return `<span class="tkn ${band(p)}" data-i="${i}" style="--a:${a}" tabindex="0">${esc(t.text)}</span>`;
   }).join("");
-  $("tableWrap").innerHTML=`<table><thead><tr><th>Field</th><th class="num">Conf (geo)</th><th class="num">Min tok</th><th class="num">Margin</th><th>Decision</th></tr></thead><tbody>${rows}</tbody></table>`;
+  document.querySelectorAll("#heatmap .tkn").forEach(el =>
+    bindPop(el, () => tokenPopHtml(toks[+el.dataset.i])));
 }
 
-// ---------- threshold panel ----------
-function renderThreshold(){
-  const r=fitRes;
-  const warn=$("warn");
-  if(!r.feasible){
-    warn.style.display="block";
-    warn.textContent="Target not achievable with this calibration set at the chosen confidence - lower the target precision or add labeled data. All fields are routed to review.";
-  }else warn.style.display="none";
-  const cells=[
-    [r.feasible?r.threshold.toFixed(3):"-","threshold (mean logprob)"],
-    [r.feasible?pct(r.autoAcceptRate):"0%","auto-accept rate"],
-    [r.feasible?pct(r.empiricalPrecision):"-","empirical precision"],
-    [r.feasible?pct(r.precisionLowerBound):"-","precision lower bound"],
+function tokenPopHtml(t) {
+  const alts = (t.alternatives || []).slice(0, 4);
+  const rows = tokenRow(t.text, t.logprob, true) +
+    alts.map(a => tokenRow(a.text, a.logprob, false)).join("");
+  const note = alts.length
+    ? "chosen token, then what else the model considered here"
+    : "no top_logprobs in this response - request top_logprobs: 2 to see alternatives";
+  return `<div class="pth">${esc(JSON.stringify(t.text))}</div>${rows}<div class="st">${note}</div>`;
+}
+
+// ---------- free text: least certain passages ----------
+function renderSpans() {
+  const sents = scoreSentences(state.lens.tokens);
+  const ranked = sents.slice().sort((a, b) => a.meanLogprob - b.meanLogprob).slice(0, 3);
+  if (!ranked.length) { $("spansWrap").innerHTML = `<div class="empty">No text to rank.</div>`; return; }
+  $("spansWrap").innerHTML = ranked.map((s, i) => {
+    const p = Math.exp(s.meanLogprob);
+    return `<div class="span ${band(p)}">` +
+      `<div class="spanhd"><span class="rank">#${i + 1}</span>` +
+      `<span class="spanstat">geo ${pct(s.geoProb)} · min tok ${pct(Math.exp(s.minLogprob))} · ${s.nTokens} tokens</span></div>` +
+      `<div class="spantext">${esc(s.text.trim())}</div></div>`;
+  }).join("");
+}
+
+// ---------- mode ----------
+function setMode(mode) {
+  document.querySelectorAll("#modeSeg .segbtn").forEach(b => {
+    const on = b.dataset.mode === mode;
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-pressed", String(on));
+  });
+  state.modeChoice = mode;
+  if (state.lens) analyzeLens();
+}
+
+function renderLens() {
+  const structured = state.lens.mode === "structured";
+  $("structuredResults").hidden = !structured;
+  $("freetextResults").hidden = structured;
+  if (structured) {
+    renderPolicyNote();
+    renderHero();
+    renderTable();
+  } else {
+    renderHonesty();
+    renderHeatmap();
+    renderSpans();
+  }
+}
+
+function analyzeLens() {
+  $("respErr").style.display = "none";
+  hidePop();
+  try {
+    const tokens = tokensFromOpenAI(JSON.parse($("respIn").value));
+    const choice = state.modeChoice || "auto";
+    const detected = detectMode(tokens);
+    const mode = choice === "auto" ? detected : choice;
+
+    let fields = {}, fullText = tokens.map(t => t.text).join("");
+    if (mode === "structured") {
+      const res = scoreFields(tokens);
+      fields = res.fields;
+      fullText = res.fullText;
+      if (!Object.keys(fields).length) throw new Error("no JSON fields found in this response");
+    }
+    state.lens = { mode, tokens, fields, fullText };
+    $("modeNote").textContent = choice === "auto"
+      ? `auto-detected: ${detected === "structured" ? "structured JSON" : "free text"}`
+      : `forced: ${mode === "structured" ? "structured JSON" : "free text"}`;
+    renderLens();
+  } catch (e) {
+    state.lens = null;
+    $("respErr").textContent = "Could not analyze: " + e.message;
+    $("respErr").style.display = "block";
+  }
+}
+</script>
+<script id="fieldtrust-workspace">
+// Workspace - batch operations and the review policy.
+//   calibrate: fit a guaranteed threshold (moved here from Lens)
+//   dashboard: how that policy plays out across a whole batch
+
+// ---------- policy ----------
+function renderThreshold() {
+  const r = state.fit, warn = $("warn");
+  if (!r.feasible) {
+    warn.style.display = "block";
+    warn.textContent = "Target not achievable with this calibration set at the chosen confidence - lower the target precision or add labeled data. All fields are routed to review.";
+  } else warn.style.display = "none";
+  const cells = [
+    [r.feasible ? r.threshold.toFixed(3) : "-", "threshold (mean logprob)"],
+    [r.feasible ? pct(r.autoAcceptRate) : "0%", "auto-accept rate (calib)"],
+    [r.feasible ? pct(r.empiricalPrecision) : "-", "empirical precision"],
+    [r.feasible ? pct(r.precisionLowerBound) : "-", "precision lower bound"],
   ];
-  $("stats").innerHTML=cells.map(([b,s])=>`<div class="stat"><b>${b}</b><span>${s}</span></div>`).join("");
-  const ar=r.feasible?r.autoAcceptRate:0;
-  $("stripFill").style.width=pct(ar);
-  $("stripLblA").textContent=r.feasible?pct(ar):"0%";
-  $("stripLblR").textContent=pct(1-ar);
+  $("stats").innerHTML = cells.map(([b, s]) => `<div class="stat"><b>${b}</b><span>${s}</span></div>`).join("");
+  const ar = r.feasible ? r.autoAcceptRate : 0;
+  $("stripFill").style.width = pct(ar);
+  $("stripLblA").textContent = r.feasible ? pct(ar) : "0%";
+  $("stripLblR").textContent = pct(1 - ar);
   renderChart();
 }
-function renderChart(){
-  const W=560,H=200,L=42,B=26,T=10,R=12;
-  const c=fitRes.curve;
-  const x=v=>L+v*(W-L-R), y=v=>T+(1-(v-0.6)/0.4)*(H-T-B); // y domain [0.6,1]
-  const cl=v=>Math.max(0.6,Math.min(1,v));
-  const path=k=>c.map((p,i)=>`${i?"L":"M"}${x(p.coverage).toFixed(1)},${y(cl(p[k])).toFixed(1)}`).join(" ");
-  const tgt=y(cl(fitRes.targetPrecision));
-  let marker="";
-  if(fitRes.feasible){
-    const mx=x(fitRes.autoAcceptRate);
-    marker=`<line x1="${mx}" y1="${T}" x2="${mx}" y2="${H-B}" stroke="#14201D" stroke-width="1.5"/><circle cx="${mx}" cy="${y(cl(fitRes.precisionLowerBound))}" r="4" fill="#0B7A66"/>`;
+
+function renderChart() {
+  const W = 560, H = 200, L = 42, B = 26, T = 10, R = 12;
+  const c = state.fit.curve;
+  const x = v => L + v * (W - L - R), y = v => T + (1 - (v - 0.6) / 0.4) * (H - T - B);
+  const cl = v => Math.max(0.6, Math.min(1, v));
+  const path = k => c.map((p, i) => `${i ? "L" : "M"}${x(p.coverage).toFixed(1)},${y(cl(p[k])).toFixed(1)}`).join(" ");
+  const tgt = y(cl(state.fit.targetPrecision));
+  let marker = "";
+  if (state.fit.feasible) {
+    const mx = x(state.fit.autoAcceptRate);
+    marker = `<line x1="${mx}" y1="${T}" x2="${mx}" y2="${H - B}" stroke="#14201D" stroke-width="1.5"/>` +
+      `<circle cx="${mx}" cy="${y(cl(state.fit.precisionLowerBound))}" r="4" fill="#0B7A66"/>`;
   }
-  $("chart").innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Risk-coverage curve">
-    <line x1="${L}" y1="${H-B}" x2="${W-R}" y2="${H-B}" stroke="#D9E2DF"/>
-    <line x1="${L}" y1="${T}" x2="${L}" y2="${H-B}" stroke="#D9E2DF"/>
-    ${[0.6,0.7,0.8,0.9,1].map(v=>`<text x="${L-6}" y="${y(v)+3}" text-anchor="end">${(v*100).toFixed(0)}</text><line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="#EEF3F1"/>`).join("")}
-    ${[0,0.25,0.5,0.75,1].map(v=>`<text x="${x(v)}" y="${H-B+14}" text-anchor="middle">${(v*100).toFixed(0)}%</text>`).join("")}
-    <line x1="${L}" x2="${W-R}" y1="${tgt}" y2="${tgt}" stroke="#B4790F" stroke-dasharray="5 4"/>
+  $("chart").innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Risk-coverage curve">
+    <line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" stroke="#D9E2DF"/>
+    <line x1="${L}" y1="${T}" x2="${L}" y2="${H - B}" stroke="#D9E2DF"/>
+    ${[0.6, 0.7, 0.8, 0.9, 1].map(v => `<text x="${L - 6}" y="${y(v) + 3}" text-anchor="end">${(v * 100).toFixed(0)}</text><line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="#EEF3F1"/>`).join("")}
+    ${[0, 0.25, 0.5, 0.75, 1].map(v => `<text x="${x(v)}" y="${H - B + 14}" text-anchor="middle">${(v * 100).toFixed(0)}%</text>`).join("")}
+    <line x1="${L}" x2="${W - R}" y1="${tgt}" y2="${tgt}" stroke="#B4790F" stroke-dasharray="5 4"/>
     <path d="${path('precision')}" fill="none" stroke="#5F6F6A" stroke-width="1.4"/>
     <path d="${path('lcb')}" fill="none" stroke="#0B7A66" stroke-width="2"/>
     ${marker}
-    <text x="${W-R}" y="${tgt-5}" text-anchor="end" fill="#B4790F">target</text>
-    <text x="${L+6}" y="${T+10}">precision (grey) · Wilson LCB (teal) vs coverage</text>
+    <text x="${W - R}" y="${tgt - 5}" text-anchor="end" fill="#B4790F">target</text>
+    <text x="${L + 6}" y="${T + 10}">precision (grey) · Wilson LCB (teal) vs coverage</text>
   </svg>`;
 }
 
-// ---------- actions ----------
-function analyze(){
-  $("respErr").style.display="none";
-  try{
-    const parsed=JSON.parse($("respIn").value);
-    const toks=tokensFromOpenAI(parsed);
-    const res=scoreFields(toks);
-    fields=res.fields; window.__fullText=res.fullText;
-    renderHero();renderTable();
-  }catch(e){
-    $("respErr").textContent="Could not parse: "+e.message;
-    $("respErr").style.display="block";
-  }
-}
-function refit(){
-  $("csvErr").style.display="none";
-  let data=calib;
-  if($("tabCsv").classList.contains("on")){
-    try{
-      const s=[],c=[];
-      $("csvIn").value.trim().split(/\n+/).forEach(line=>{
-        const[a,b]=line.split(/[,\t]/);const sc=parseFloat(a),cc=parseInt(b);
-        if(!isNaN(sc)&&!isNaN(cc)){s.push(sc);c.push(!!cc)}
+function refit() {
+  $("csvErr").style.display = "none";
+  let data = state.calib;
+  if ($("tabCsv").classList.contains("on")) {
+    try {
+      const s = [], c = [];
+      $("csvIn").value.trim().split(/\n+/).forEach(line => {
+        const [a, b] = line.split(/[,\t]/);
+        const sc = parseFloat(a), cc = parseInt(b);
+        if (!isNaN(sc) && !isNaN(cc)) { s.push(sc); c.push(!!cc); }
       });
-      if(s.length<20)throw new Error("need at least 20 rows");
-      data={scores:s,correct:c};
-    }catch(e){
-      $("csvErr").textContent=e.message;$("csvErr").style.display="block";return;
+      if (s.length < 20) throw new Error("need at least 20 rows");
+      data = { scores: s, correct: c };
+    } catch (e) {
+      $("csvErr").textContent = e.message;
+      $("csvErr").style.display = "block";
+      return;
     }
   }
-  fitRes=fitThreshold(data.scores,data.correct,parseFloat($("target").value),parseFloat($("delta").value));
+  state.fit = fitThreshold(data.scores, data.correct,
+    parseFloat($("target").value), parseFloat($("delta").value));
   renderThreshold();
-  if(Object.keys(fields).length){renderHero();renderTable()}
+  renderBatch();                       // policy moved -> batch decisions move
+  if (state.lens) renderLens();        // ...and so do the Lens decisions
 }
 
-// tabs
-function tabPair(a,b,onA,onB){
-  $(a).addEventListener("click",()=>{$(a).classList.add("on");$(b).classList.remove("on");onA()});
-  $(b).addEventListener("click",()=>{$(b).classList.add("on");$(a).classList.remove("on");onB()});
+// ---------- batch ----------
+function loadBatch() {
+  $("batchErr").style.display = "none";
+  const text = $("tabBatchDemo").classList.contains("on") ? demoBatch(120) : $("batchIn").value;
+  if (!text.trim()) {
+    $("batchErr").textContent = "Paste JSONL or choose a file first.";
+    $("batchErr").style.display = "block";
+    return;
+  }
+  const { docs, errors } = parseBatch(text);
+  if (!docs.length) {
+    state.batch = null;
+    $("batchErr").textContent = errors.length
+      ? `No usable responses. First error (line ${errors[0].line}): ${errors[0].message}`
+      : "No usable responses found.";
+    $("batchErr").style.display = "block";
+    renderBatch();
+    return;
+  }
+  state.batch = { docs, errors };
+  renderBatch();
 }
-tabPair("tabSample","tabPaste",
-  ()=>{$("respIn").value=JSON.stringify(DEMO_RESPONSE,null,1);analyze()},
-  ()=>{$("respIn").value="";$("respIn").placeholder="Paste the full chat.completions response JSON here (with logprobs)…";$("respIn").focus()});
-tabPair("tabSynth","tabCsv",
-  ()=>{$("csvIn").style.display="none";refit()},
-  ()=>{$("csvIn").style.display="block";$("csvIn").focus()});
 
-$("analyze").addEventListener("click",analyze);
-$("fit").addEventListener("click",refit);
-$("target").addEventListener("input",()=>{$("targetOut").textContent=Math.round($("target").value*100)+"%";refit()});
-$("delta").addEventListener("change",refit);
-$("yr").textContent=new Date().getFullYear();
+function renderBatch() {
+  const has = !!(state.batch && state.batch.docs.length);
+  $("batchEmpty").hidden = has;
+  $("histCard").hidden = !has;
+  $("pathCard").hidden = !has;
+  $("batchStats").innerHTML = "";
+  $("batchNote").textContent = "";
+  if (!has) return;
 
-// boot
-$("respIn").value=JSON.stringify(DEMO_RESPONSE,null,1);
-refit();
-analyze();
+  const { docs, errors } = state.batch;
+  const thr = state.fit && state.fit.feasible ? state.fit.threshold : NaN;
+  const s = batchSummary(docs, thr);
+
+  $("batchNote").textContent = `${nfmt(docs.length)} responses parsed` +
+    (errors.length ? ` · ${nfmt(errors.length)} line(s) skipped (first: line ${errors[0].line})` : "");
+
+  const cells = [
+    [nfmt(s.nDocs), "responses"],
+    [nfmt(s.nFields), "fields"],
+    [Number.isFinite(thr) ? pct(s.autoAcceptRate) : "0%", "auto-accept on this batch"],
+    [nfmt(s.nReview), "fields to review"],
+  ];
+  $("batchStats").innerHTML = cells.map(([b, t]) => `<div class="stat"><b>${b}</b><span>${t}</span></div>`).join("");
+  renderHist(docs, thr);
+  renderPathTable(docs, thr);
+}
+
+function renderHist(docs, thr) {
+  const values = [];
+  for (const d of docs) for (const f of Object.values(d.fields)) values.push(f.meanLogprob);
+  const bins = histogramBins(values, 28);
+  const W = 560, H = 180, L = 34, B = 26, T = 8, R = 10;
+  const maxC = bins.reduce((m, b) => Math.max(m, b.count), 1);
+  const x0 = bins[0].x0, x1 = bins[bins.length - 1].x1;
+  const x = v => L + ((v - x0) / (x1 - x0)) * (W - L - R);
+  const y = c => T + (1 - c / maxC) * (H - T - B);
+  const bw = Math.max(1, (W - L - R) / bins.length - 1.5);
+
+  const bars = bins.map(b => {
+    const auto = Number.isFinite(thr) && b.x0 >= thr;
+    return `<rect x="${x(b.x0).toFixed(1)}" y="${y(b.count).toFixed(1)}" width="${bw.toFixed(1)}" ` +
+      `height="${(H - B - y(b.count)).toFixed(1)}" fill="${auto ? "#0B7A66" : "#B23A2B"}" opacity="${auto ? 0.85 : 0.7}"/>`;
+  }).join("");
+  const line = Number.isFinite(thr) && thr >= x0 && thr <= x1
+    ? `<line x1="${x(thr).toFixed(1)}" y1="${T}" x2="${x(thr).toFixed(1)}" y2="${H - B}" stroke="#14201D" stroke-width="1.5"/>` +
+      `<text x="${x(thr).toFixed(1)}" y="${T + 9}" text-anchor="middle" fill="#14201D">threshold</text>` : "";
+
+  $("hist").innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Confidence distribution across the batch">
+    <line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" stroke="#D9E2DF"/>
+    ${bars}${line}
+    ${[x0, (x0 + x1) / 2, x1].map(v => `<text x="${x(v).toFixed(1)}" y="${H - B + 14}" text-anchor="middle">${v.toFixed(2)}</text>`).join("")}
+    <text x="${L}" y="${H - 4}" text-anchor="start">mean logprob per field ->  higher = more confident</text>
+    <text x="${L - 6}" y="${y(maxC) + 4}" text-anchor="end">${maxC}</text>
+  </svg>`;
+}
+
+function renderPathTable(docs, thr) {
+  const rows = aggregateByPath(docs, thr).map(r => {
+    const risky = r.belowRate >= 0.5;
+    return `<tr><td>${esc(r.path)}</td><td class="num">${nfmt(r.count)}</td>` +
+      `<td class="num">${pct(r.meanGeoProb)}</td><td class="num">${pct(r.minGeoProb)}</td>` +
+      `<td class="num"><span class="pill ${risky ? "review" : "auto"}">${pct(r.belowRate, 0)}</span></td></tr>`;
+  }).join("");
+  $("pathWrap").innerHTML = `<table><thead><tr><th>Field path</th><th class="num">Count</th>` +
+    `<th class="num">Mean conf</th><th class="num">Worst</th><th class="num">Below thr.</th>` +
+    `</tr></thead><tbody>${rows}</tbody></table>`;
+}
+</script>
+<script id="fieldtrust-app">
+// Routing, event wiring, boot. Runs last: every function it calls is already
+// defined by the earlier script blocks.
+
+const VIEWS = ["lens", "workspace", "about"];
+
+function currentView() {
+  const v = (location.hash || "").replace(/^#/, "");
+  return VIEWS.includes(v) ? v : "lens";
+}
+
+function route() {
+  const view = currentView();
+  VIEWS.forEach(v => { $("view-" + v).classList.toggle("on", v === view); });
+  document.querySelectorAll("#nav a").forEach(a => {
+    const on = a.dataset.view === view;
+    a.classList.toggle("on", on);
+    if (on) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+  });
+  hidePop();
+  document.title = view === "lens"
+    ? "FieldTrust - see where your LLM output can be trusted"
+    : `FieldTrust - ${view[0].toUpperCase() + view.slice(1)}`;
+}
+
+// Two-tab helper: clicking one turns the other off.
+function tabPair(a, b, onA, onB) {
+  $(a).addEventListener("click", () => { $(a).classList.add("on"); $(b).classList.remove("on"); onA(); });
+  $(b).addEventListener("click", () => { $(b).classList.add("on"); $(a).classList.remove("on"); onB(); });
+}
+
+// ---------- Lens wiring ----------
+function tabsThree(ids, onEach) {
+  ids.forEach(id => $(id).addEventListener("click", () => {
+    ids.forEach(o => $(o).classList.toggle("on", o === id));
+    onEach(id);
+  }));
+}
+
+tabsThree(["tabSample", "tabProse", "tabPaste"], id => {
+  if (id === "tabSample") { $("respIn").value = JSON.stringify(DEMO_RESPONSE, null, 1); analyzeLens(); }
+  else if (id === "tabProse") { $("respIn").value = JSON.stringify(DEMO_PROSE, null, 1); analyzeLens(); }
+  else {
+    $("respIn").value = "";
+    $("respIn").placeholder = "Paste the full chat.completions response JSON here (with logprobs)...";
+    $("respIn").focus();
+  }
+});
+
+document.querySelectorAll("#modeSeg .segbtn").forEach(b =>
+  b.addEventListener("click", () => setMode(b.dataset.mode)));
+$("analyze").addEventListener("click", analyzeLens);
+
+// ---------- Workspace wiring ----------
+tabPair("tabBatchDemo", "tabBatchPaste",
+  () => { $("batchInputs").hidden = true; },
+  () => { $("batchInputs").hidden = false; $("batchIn").focus(); });
+
+$("batchFile").addEventListener("change", e => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => { $("batchIn").value = String(reader.result); loadBatch(); };
+  reader.readAsText(file);
+});
+$("loadBatch").addEventListener("click", loadBatch);
+
+tabPair("tabSynth", "tabCsv",
+  () => { $("csvIn").style.display = "none"; refit(); },
+  () => { $("csvIn").style.display = "block"; $("csvIn").focus(); });
+
+$("fit").addEventListener("click", refit);
+$("target").addEventListener("input", () => {
+  $("targetOut").textContent = Math.round($("target").value * 100) + "%";
+  refit();
+});
+$("delta").addEventListener("change", refit);
+
+// ---------- global ----------
+window.addEventListener("hashchange", route);
+document.addEventListener("click", hidePop);
+$("yr").textContent = new Date().getFullYear();
+
+// ---------- boot ----------
+state.calib = demoCalib();
+state.modeChoice = "auto";
+route();
+refit();                                            // fit the demo policy first
+$("respIn").value = JSON.stringify(DEMO_RESPONSE, null, 1);
+analyzeLens();                                      // ...so Lens can route with it
 </script>
 </body>
 </html>

@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FieldTrust - which fields can you trust?</title>
+<title>FieldTrust - see where your LLM output can be trusted</title>
+<meta name="description" content="See where your LLM output can be trusted, and route only what needs review to humans. Per-field confidence and guaranteed auto-accept precision, entirely in your browser.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -12,24 +13,105 @@
 </head>
 <body>
 <header><div class="wrap hd">
-  <div class="wordmark">Field<span class="tick">Trust</span></div>
-  <div class="tag">Per-field confidence &amp; review routing for LLM structured outputs</div>
+  <a class="wordmark" href="#lens">Field<span class="tick">Trust</span></a>
+  <nav class="nav" id="nav">
+    <a href="#lens" data-view="lens">Lens</a>
+    <a href="#workspace" data-view="workspace">Workspace</a>
+    <a href="#about" data-view="about">About</a>
+  </nav>
   <div class="badge">runs 100% in your browser</div>
 </div></header>
 
-<div class="wrap"><main>
+<div class="wrap">
+
+<!-- ===================== LENS ===================== -->
+<main class="view" id="view-lens">
 <section>
   <div class="card">
-    <div class="eyebrow">01 · Inspect</div>
+    <div class="eyebrow">01 · Inspect one response</div>
     <h2>Extraction response</h2>
-    <p class="sub">Paste an OpenAI chat-completion response captured with <code>logprobs: true</code> (ideally <code>top_logprobs: 2</code>), or start from the sample.</p>
+    <p class="sub">Paste an OpenAI chat-completion response captured with <code>logprobs: true</code> (ideally <code>top_logprobs: 2</code>), or start from a sample.</p>
     <div class="tabs">
       <button class="tab on" id="tabSample">Sample receipt</button>
+      <button class="tab" id="tabProse">Sample prose</button>
       <button class="tab" id="tabPaste">Paste response</button>
     </div>
     <textarea id="respIn" spellcheck="false" aria-label="Response JSON"></textarea>
-    <button class="btn" id="analyze">Analyze fields</button>
+    <div class="modebar">
+      <span class="modelabel">Mode</span>
+      <div class="seg" id="modeSeg" role="group" aria-label="Analysis mode">
+        <button class="segbtn on" data-mode="auto" aria-pressed="true">Auto</button>
+        <button class="segbtn" data-mode="structured" aria-pressed="false">Structured</button>
+        <button class="segbtn" data-mode="freetext" aria-pressed="false">Free text</button>
+      </div>
+      <span class="modenote" id="modeNote"></span>
+    </div>
+    <button class="btn" id="analyze">Analyze</button>
     <div class="err" id="respErr"></div>
+  </div>
+
+  <div class="card cta">
+    <div class="eyebrow">Next step</div>
+    <h2>Got more than one response?</h2>
+    <p class="sub">Upload a JSONL batch to see which fields are structurally weak across your whole pipeline, and review only what falls below your threshold.</p>
+    <a class="btn ghost" href="#workspace" id="ctaWorkspace">Open Workspace</a>
+  </div>
+</section>
+
+<section>
+  <!-- structured mode results -->
+  <div id="structuredResults">
+    <div class="card">
+      <div class="eyebrow">Result · Annotated output</div>
+      <div class="policynote" id="policyNote"></div>
+      <div class="jsonhero" id="hero"></div>
+    </div>
+    <div class="card">
+      <div class="eyebrow">Result · Routing decisions</div>
+      <div id="tableWrap"></div>
+    </div>
+  </div>
+
+  <!-- free-text mode results -->
+  <div id="freetextResults" hidden>
+    <div class="card">
+      <div class="eyebrow">Result · Token heatmap</div>
+      <div class="honesty" id="honesty" role="note"></div>
+      <div class="heatmap" id="heatmap"></div>
+      <div class="ramp">
+        <span class="rampitem"><span class="swatch hi"></span>confident</span>
+        <span class="rampitem"><span class="swatch mid"></span>some competition</span>
+        <span class="rampitem"><span class="swatch lo"></span>many alternatives</span>
+        <span class="rampnote">hover a token to see what else the model considered</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="eyebrow">Result · Least certain passages</div>
+      <p class="sub">Sentences ranked by mean token logprob. Exploration only - no auto-accept decision is made for free text.</p>
+      <div id="spansWrap"></div>
+    </div>
+  </div>
+</section>
+</main>
+
+<!-- ===================== WORKSPACE ===================== -->
+<main class="view" id="view-workspace">
+<section>
+  <div class="card">
+    <div class="eyebrow">01 · Batch</div>
+    <h2>Upload responses</h2>
+    <p class="sub">One JSON per line (JSONL): either a bare OpenAI response, or <code>{"id": "doc-1", "response": {...}}</code>. Bad lines are skipped and counted.</p>
+    <div class="tabs">
+      <button class="tab on" id="tabBatchDemo">Demo batch (n=120)</button>
+      <button class="tab" id="tabBatchPaste">Paste / upload</button>
+    </div>
+    <div id="batchInputs" hidden>
+      <input type="file" id="batchFile" accept=".jsonl,.json,.txt" aria-label="JSONL file">
+      <textarea id="batchIn" spellcheck="false" style="min-height:110px" placeholder='{"id":"doc-1","response":{...}}'></textarea>
+    </div>
+    <button class="btn" id="loadBatch">Load batch</button>
+    <div class="err" id="batchErr"></div>
+    <div class="note" id="batchNote"></div>
   </div>
 
   <div class="card">
@@ -40,29 +122,17 @@
       <button class="tab on" id="tabSynth">Demo set (n=500)</button>
       <button class="tab" id="tabCsv">Paste CSV</button>
     </div>
-    <textarea id="csvIn" spellcheck="false" style="display:none;min-height:110px" placeholder="-0.12,1&#10;-1.40,0&#10;-0.03,1&#10;…  (score,correct)"></textarea>
+    <textarea id="csvIn" spellcheck="false" style="display:none;min-height:110px" placeholder="-0.12,1&#10;-1.40,0&#10;-0.03,1&#10;...  (score,correct)"></textarea>
     <div class="ctl"><label for="target">Target precision</label><input type="range" id="target" min="0.80" max="0.99" step="0.01" value="0.95"><output id="targetOut">95%</output></div>
-    <div class="ctl"><label for="delta">Confidence 1−δ</label>
+    <div class="ctl"><label for="delta">Confidence 1-delta</label>
       <select id="delta"><option value="0.10">90%</option><option value="0.05" selected>95%</option><option value="0.01">99%</option></select>
     </div>
     <button class="btn ghost" id="fit">Refit threshold</button>
     <div class="err" id="csvErr"></div>
   </div>
-</section>
-
-<section>
-  <div class="card">
-    <div class="eyebrow">Result · Annotated output</div>
-    <div class="jsonhero" id="hero"></div>
-  </div>
 
   <div class="card">
-    <div class="eyebrow">Result · Routing decisions</div>
-    <div id="tableWrap"></div>
-  </div>
-
-  <div class="card">
-    <div class="eyebrow">Result · Guaranteed threshold</div>
+    <div class="eyebrow">Policy · Guaranteed threshold</div>
     <div class="warn" id="warn"></div>
     <div class="stats" id="stats"></div>
     <div class="strip" id="strip"><div class="fill" id="stripFill"></div><div class="lbl" id="stripLblA"></div><div class="lbl" id="stripLblR" style="right:0"></div></div>
@@ -70,20 +140,75 @@
     <div id="chart"></div>
   </div>
 </section>
+
+<section>
+  <div class="card">
+    <div class="eyebrow">Dashboard · This batch</div>
+    <div class="stats" id="batchStats"></div>
+    <div class="empty" id="batchEmpty">Load a batch to see how your policy plays out across it.</div>
+  </div>
+
+  <div class="card" id="histCard" hidden>
+    <div class="eyebrow">Dashboard · Confidence distribution</div>
+    <p class="sub">Every field in the batch by mean token logprob. The line is your current threshold: everything left of it goes to review.</p>
+    <div id="hist"></div>
+  </div>
+
+  <div class="card" id="pathCard" hidden>
+    <div class="eyebrow">Dashboard · Weakest fields</div>
+    <p class="sub">Aggregated by schema path (array indices collapsed), most below-threshold first.</p>
+    <div id="pathWrap"></div>
+  </div>
+</section>
 </main>
+
+<!-- ===================== ABOUT ===================== -->
+<main class="view" id="view-about">
+<section class="prose">
+  <div class="card">
+    <div class="eyebrow">About</div>
+    <h2>See where your LLM output can be trusted</h2>
+    <p>When you extract structured data with an LLM at scale, some outputs are silently wrong and you do not know which. FieldTrust turns the model's own token probabilities into a per-field confidence score, then uses a small labeled sample to find the threshold where auto-accepting is statistically safe.</p>
+    <h3>Lens</h3>
+    <p>Inspect a single response. In structured mode every JSON field is scored and routed; in free-text mode you get a token heatmap and the alternatives the model considered. Free text is exploration only - no accept/review decision is made there.</p>
+    <h3>Workspace</h3>
+    <p>Load a JSONL batch to see the confidence distribution, find which schema paths are structurally weak, and fit a review policy that meets your precision target.</p>
+    <h3>The guarantee</h3>
+    <p>The threshold is chosen so that the one-sided <strong>Wilson lower confidence bound</strong> on auto-accept precision meets your target. "Precision was 98% on the calibration set" is an observation; "precision is at least 95% with 95% confidence" is a guarantee. The cost is coverage: raise the target and the auto-accept rate falls. That trade is the whole product.</p>
+    <h3>Privacy</h3>
+    <p>Everything runs client-side in this single HTML file. Nothing you paste or upload leaves your browser - there is no server to send it to.</p>
+    <h3>Limits</h3>
+    <p>Token probabilities are a good but imperfect error signal, and they are strongest under schema-constrained decoding. Providers that do not expose logprobs are not supported yet (a self-consistency fallback is on the roadmap). The guarantee holds for data drawn from the same distribution as your calibration set.</p>
+    <p class="aboutlinks"><a href="https://github.com/5seoyoung/fieldtrust">Source on GitHub</a> · MIT licensed</p>
+  </div>
+</section>
+</main>
+
+</div>
 
 <footer class="wrap">
   All computation happens client-side - nothing you paste leaves this page. Threshold guarantee: one-sided Wilson lower bound on auto-accept precision. · <span id="yr"></span> FieldTrust
 </footer>
-</div>
 
 <div class="pop" id="pop" role="tooltip"></div>
 
 <script id="fieldtrust-core">
 // INJECT:core.js
 </script>
-<script>
-// INJECT:ui.js
+<script id="fieldtrust-demo">
+// INJECT:demo.js
+</script>
+<script id="fieldtrust-shared">
+// INJECT:shared.js
+</script>
+<script id="fieldtrust-lens">
+// INJECT:lens.js
+</script>
+<script id="fieldtrust-workspace">
+// INJECT:workspace.js
+</script>
+<script id="fieldtrust-app">
+// INJECT:app.js
 </script>
 </body>
 </html>

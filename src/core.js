@@ -139,7 +139,12 @@ function tokensFromOpenAI(input) {
     let second = null;
     const others = (item.top_logprobs || []).filter(c => c.token !== item.token);
     if (others.length) second = Math.max(...others.map(c => c.logprob));
-    return { text: item.token, logprob: item.logprob, secondLogprob: second };
+    // `alternatives` keeps the full runner-up list for the free-text lens,
+    // which shows what else the model considered at this position.
+    const alternatives = others
+      .map(c => ({ text: c.token, logprob: c.logprob }))
+      .sort((a, b) => b.logprob - a.logprob);
+    return { text: item.token, logprob: item.logprob, secondLogprob: second, alternatives };
   });
 }
 
@@ -202,5 +207,148 @@ function fitThreshold(scores, correct, targetPrecision = 0.95, delta = 0.05) {
     feasible: true, threshold: s[best.i - 1], targetPrecision, delta, nCalib: n,
     autoAcceptRate: best.i / n, empiricalPrecision: best.k / best.i,
     precisionLowerBound: best.lcb, curve,
+  };
+}
+
+// ---------- lens mode detection ----------
+// Structured mode needs a JSON object we can actually pull fields out of;
+// anything else (prose, refusals, chain-of-thought) is free text.
+function detectMode(tokens) {
+  try {
+    return Object.keys(scoreFields(tokens).fields).length ? "structured" : "freetext";
+  } catch (e) {
+    return "freetext";
+  }
+}
+
+// ---------- free-text scoring ----------
+// Char spans of sentence-ish chunks: split after . ! ? or on newlines.
+function segmentSentences(text) {
+  const out = [];
+  let start = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    const isBreak = ch === "\n" || ((ch === "." || ch === "!" || ch === "?") &&
+      // not a decimal point / ellipsis mid-number
+      !/[0-9]/.test(text[i + 1] || ""));
+    if (!isBreak) continue;
+    let end = i + 1;
+    while (end < text.length && ".!?\"')]".includes(text[end])) end++;
+    if (text.slice(start, end).trim()) out.push({ start, end });
+    start = end;
+  }
+  if (text.slice(start).trim()) out.push({ start, end: text.length });
+  return out;
+}
+
+// Per-sentence aggregate logprobs, for ranking the shakiest passages.
+function scoreSentences(tokens) {
+  const full = tokens.map(t => t.text).join("");
+  const offsets = [];
+  let p = 0;
+  for (const t of tokens) { offsets.push([p, p + t.text.length]); p += t.text.length; }
+
+  return segmentSentences(full).map(({ start, end }) => {
+    const lps = [], toks = [];
+    tokens.forEach((tok, i) => {
+      const [ts, te] = offsets[i];
+      if (ts < end && te > start) { lps.push(tok.logprob); toks.push(tok); }
+    });
+    if (!lps.length) return null;
+    const sum = lps.reduce((a, b) => a + b, 0);
+    return {
+      text: full.slice(start, end), start, end, nTokens: lps.length,
+      meanLogprob: sum / lps.length, minLogprob: Math.min(...lps),
+      geoProb: Math.exp(sum / lps.length), tokens: toks,
+    };
+  }).filter(Boolean);
+}
+
+// ---------- batch (JSONL) ----------
+// Each line is either a bare OpenAI response or {id, response}. Bad lines are
+// collected rather than thrown, so one broken row cannot kill a 500-row batch.
+function parseBatch(text) {
+  const docs = [], errors = [];
+  text.split("\n").forEach((line, i) => {
+    if (!line.trim()) return;
+    try {
+      const obj = JSON.parse(line);
+      const response = obj && obj.response ? obj.response : obj;
+      const id = (obj && obj.id != null) ? String(obj.id) : `line-${i + 1}`;
+      const tokens = tokensFromOpenAI(response);
+      const { fields } = scoreFields(tokens);
+      if (!Object.keys(fields).length) throw new Error("no JSON fields found");
+      docs.push({ id, line: i + 1, tokens, fields });
+    } catch (e) {
+      errors.push({ line: i + 1, message: e.message });
+    }
+  });
+  return { docs, errors };
+}
+
+// $.items[0].name -> $.items[].name, so array elements aggregate together.
+function normalizePath(path) {
+  return path.replace(/\[\d+\]/g, "[]");
+}
+
+// Per-path rollup: which field of your schema is structurally weak?
+function aggregateByPath(docs, threshold) {
+  const byPath = new Map();
+  for (const doc of docs) {
+    for (const f of Object.values(doc.fields)) {
+      const key = normalizePath(f.path);
+      if (!byPath.has(key)) byPath.set(key, []);
+      byPath.get(key).push(f);
+    }
+  }
+  const rows = [];
+  for (const [path, fs] of byPath) {
+    const sum = fs.reduce((a, f) => a + f.meanLogprob, 0);
+    const below = Number.isFinite(threshold)
+      ? fs.filter(f => f.meanLogprob < threshold).length : 0;
+    rows.push({
+      path, count: fs.length,
+      meanLogprob: sum / fs.length,
+      meanGeoProb: fs.reduce((a, f) => a + f.geoProb, 0) / fs.length,
+      minGeoProb: Math.min(...fs.map(f => f.geoProb)),
+      belowCount: below, belowRate: below / fs.length,
+    });
+  }
+  // weakest first: most below-threshold, then lowest confidence
+  return rows.sort((a, b) => b.belowRate - a.belowRate || a.meanLogprob - b.meanLogprob);
+}
+
+// Equal-width bins over `values`. Loop-based (not Math.min(...values)) so a
+// 10k-field batch cannot blow the call stack.
+function histogramBins(values, nBins = 24) {
+  if (!values.length) return [];
+  let min = Infinity, max = -Infinity;
+  for (const v of values) { if (v < min) min = v; if (v > max) max = v; }
+  if (min === max) { min -= 0.5; max += 0.5; }
+  const width = (max - min) / nBins;
+  const bins = Array.from({ length: nBins }, (_, i) => ({
+    x0: min + i * width, x1: min + (i + 1) * width, count: 0,
+  }));
+  for (const v of values) {
+    let i = Math.floor((v - min) / width);
+    if (i >= nBins) i = nBins - 1;
+    if (i < 0) i = 0;
+    bins[i].count++;
+  }
+  return bins;
+}
+
+// Rollup of a batch against the current policy.
+function batchSummary(docs, threshold) {
+  let nFields = 0, nBelow = 0;
+  for (const doc of docs) {
+    for (const f of Object.values(doc.fields)) {
+      nFields++;
+      if (!Number.isFinite(threshold) || f.meanLogprob < threshold) nBelow++;
+    }
+  }
+  return {
+    nDocs: docs.length, nFields, nReview: nBelow, nAuto: nFields - nBelow,
+    autoAcceptRate: nFields ? (nFields - nBelow) / nFields : 0,
   };
 }
