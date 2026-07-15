@@ -1,0 +1,11 @@
+{
+  "name": "fieldtrust-dev",
+  "private": true,
+  "description": "Dev harness for FieldTrust web app tests (the app itself is dependency-free index.html)",
+  "scripts": {
+    "test": "node --test tests/test_core.js"
+  },
+  "devDependencies": {
+    "jsdom": "^24.1.0"
+  }
+}

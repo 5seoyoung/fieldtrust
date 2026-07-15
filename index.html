@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FieldTrust - which fields can you trust?</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F4F7F6; --surface:#FFFFFF; --ink:#14201D; --muted:#5F6F6A;
+  --line:#D9E2DF; --certain:#0B7A66; --certain-soft:#E2F1EE;
+  --alert:#B23A2B; --alert-soft:#F7E8E5; --caution:#B4790F;
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+  --disp:'Space Grotesk',sans-serif; --body:'Inter',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{background:var(--bg)}
+body{font-family:var(--body);color:var(--ink);line-height:1.55;font-size:15px;min-height:100vh}
+a{color:var(--certain)}
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px}
+
+header{border-bottom:1px solid var(--line);background:var(--surface)}
+.hd{display:flex;align-items:baseline;gap:16px;padding:18px 0;flex-wrap:wrap}
+.wordmark{font-family:var(--disp);font-weight:700;font-size:22px;letter-spacing:-.02em}
+.wordmark .tick{color:var(--certain)}
+.tag{color:var(--muted);font-size:13.5px}
+.badge{margin-left:auto;font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--certain);background:var(--certain-soft);border:1px solid #BFDDD6;border-radius:999px;padding:4px 11px}
+
+main{display:grid;grid-template-columns:390px 1fr;gap:22px;padding:26px 0 60px}
+@media(max-width:940px){main{grid-template-columns:1fr}}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px 20px}
+.card+.card{margin-top:18px}
+.eyebrow{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+h2{font-family:var(--disp);font-size:16px;font-weight:700;letter-spacing:-.01em;margin-bottom:4px}
+.sub{color:var(--muted);font-size:13px;margin-bottom:12px}
+
+.tabs{display:flex;gap:6px;margin-bottom:12px}
+.tab{font-family:var(--mono);font-size:12px;padding:6px 12px;border:1px solid var(--line);border-radius:7px;background:none;cursor:pointer;color:var(--muted)}
+.tab.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+textarea{width:100%;min-height:150px;font-family:var(--mono);font-size:12px;border:1px solid var(--line);border-radius:8px;padding:10px;resize:vertical;background:#FBFDFC;color:var(--ink)}
+textarea:focus{outline:2px solid var(--certain);outline-offset:1px}
+.btn{font-family:var(--disp);font-weight:500;font-size:13.5px;padding:8px 16px;border-radius:8px;border:1px solid var(--ink);background:var(--ink);color:#fff;cursor:pointer;margin-top:10px}
+.btn.ghost{background:none;color:var(--ink)}
+.btn:focus-visible{outline:2px solid var(--certain);outline-offset:2px}
+.err{color:var(--alert);font-size:12.5px;font-family:var(--mono);margin-top:8px;display:none}
+
+.ctl{display:flex;align-items:center;gap:10px;margin-top:12px;font-size:13px}
+.ctl label{color:var(--muted);min-width:118px}
+.ctl output{font-family:var(--mono);font-weight:600;min-width:46px;text-align:right}
+input[type=range]{flex:1;accent-color:var(--certain)}
+select{font-family:var(--mono);font-size:12px;border:1px solid var(--line);border-radius:6px;padding:4px 6px;background:#fff}
+
+/* annotated JSON - the signature */
+.jsonhero{font-family:var(--mono);font-size:13.5px;line-height:2.05;background:#FBFDFC;border:1px solid var(--line);border-radius:8px;padding:16px 18px;overflow-x:auto;white-space:pre}
+.jk{color:var(--muted)}
+.val{position:relative;border-radius:3px;padding:1px 3px;cursor:default}
+.val .bar{position:absolute;left:0;bottom:-1px;height:3px;border-radius:2px}
+.val.auto{background:var(--certain-soft)} .val.auto .bar{background:var(--certain)}
+.val.review{background:var(--alert-soft)} .val.review .bar{background:var(--alert)}
+
+.pop{position:fixed;z-index:30;background:var(--ink);color:#EDF3F1;border-radius:9px;padding:12px 14px;font-family:var(--mono);font-size:11.5px;max-width:300px;box-shadow:0 8px 28px rgba(20,32,29,.25);display:none}
+.pop .pth{color:#8FD6C9;margin-bottom:6px;font-weight:600}
+.pop .trow{display:flex;align-items:center;gap:8px;line-height:1.9}
+.pop .tk{min-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:pre}
+.pop .tb{height:6px;border-radius:3px;background:#8FD6C9;min-width:2px}
+.pop .tp{color:#A9B8B4;min-width:44px;text-align:right}
+.pop .st{border-top:1px solid #33443F;margin-top:7px;padding-top:7px;color:#A9B8B4}
+
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+td{padding:7px 8px;border-bottom:1px solid #ECF1EF;font-family:var(--mono);font-size:12.5px}
+td.num{text-align:right}th.num{text-align:right}
+.pill{font-size:10.5px;font-weight:600;letter-spacing:.05em;border-radius:999px;padding:2.5px 9px}
+.pill.auto{color:var(--certain);background:var(--certain-soft)}
+.pill.review{color:var(--alert);background:var(--alert-soft)}
+
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0 14px}
+@media(max-width:560px){.stats{grid-template-columns:repeat(2,1fr)}}
+.stat{border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.stat b{display:block;font-family:var(--disp);font-size:19px;font-weight:700;letter-spacing:-.02em}
+.stat span{font-size:11px;color:var(--muted)}
+
+.strip{position:relative;height:26px;border-radius:6px;overflow:hidden;border:1px solid var(--line);margin:6px 0 4px;background:var(--alert-soft)}
+.strip .fill{position:absolute;left:0;top:0;bottom:0;background:var(--certain-soft);border-right:2.5px solid var(--ink)}
+.strip .lbl{position:absolute;top:0;bottom:0;display:flex;align-items:center;font-family:var(--mono);font-size:10.5px;padding:0 8px}
+.striplegend{display:flex;justify-content:space-between;color:var(--muted);font-size:11.5px;font-family:var(--mono);margin-bottom:10px}
+.warn{display:none;background:#FBF3E4;border:1px solid #E5D3A8;color:#7A5A10;border-radius:8px;padding:10px 12px;font-size:12.5px;margin-bottom:12px}
+svg text{font-family:var(--mono);font-size:9.5px;fill:var(--muted)}
+
+footer{border-top:1px solid var(--line);padding:16px 0 30px;color:var(--muted);font-size:12.5px}
+@media(prefers-reduced-motion:no-preference){.val{transition:background .25s}.strip .fill{transition:width .25s}}
+</style>
+</head>
+<body>
+<header><div class="wrap hd">
+  <div class="wordmark">Field<span class="tick">Trust</span></div>
+  <div class="tag">Per-field confidence &amp; review routing for LLM structured outputs</div>
+  <div class="badge">runs 100% in your browser</div>
+</div></header>
+
+<div class="wrap"><main>
+<section>
+  <div class="card">
+    <div class="eyebrow">01 · Inspect</div>
+    <h2>Extraction response</h2>
+    <p class="sub">Paste an OpenAI chat-completion response captured with <code>logprobs: true</code> (ideally <code>top_logprobs: 2</code>), or start from the sample.</p>
+    <div class="tabs">
+      <button class="tab on" id="tabSample">Sample receipt</button>
+      <button class="tab" id="tabPaste">Paste response</button>
+    </div>
+    <textarea id="respIn" spellcheck="false" aria-label="Response JSON"></textarea>
+    <button class="btn" id="analyze">Analyze fields</button>
+    <div class="err" id="respErr"></div>
+  </div>
+
+  <div class="card">
+    <div class="eyebrow">02 · Calibrate</div>
+    <h2>Review policy</h2>
+    <p class="sub">Fit a threshold on labeled history - pairs of <code>score,correct</code> - so every auto-accepted field meets your precision target with statistical confidence.</p>
+    <div class="tabs">
+      <button class="tab on" id="tabSynth">Demo set (n=500)</button>
+      <button class="tab" id="tabCsv">Paste CSV</button>
+    </div>
+    <textarea id="csvIn" spellcheck="false" style="display:none;min-height:110px" placeholder="-0.12,1&#10;-1.40,0&#10;-0.03,1&#10;…  (score,correct)"></textarea>
+    <div class="ctl"><label for="target">Target precision</label><input type="range" id="target" min="0.80" max="0.99" step="0.01" value="0.95"><output id="targetOut">95%</output></div>
+    <div class="ctl"><label for="delta">Confidence 1−δ</label>
+      <select id="delta"><option value="0.10">90%</option><option value="0.05" selected>95%</option><option value="0.01">99%</option></select>
+    </div>
+    <button class="btn ghost" id="fit">Refit threshold</button>
+    <div class="err" id="csvErr"></div>
+  </div>
+</section>
+
+<section>
+  <div class="card">
+    <div class="eyebrow">Result · Annotated output</div>
+    <div class="jsonhero" id="hero"></div>
+  </div>
+
+  <div class="card">
+    <div class="eyebrow">Result · Routing decisions</div>
+    <div id="tableWrap"></div>
+  </div>
+
+  <div class="card">
+    <div class="eyebrow">Result · Guaranteed threshold</div>
+    <div class="warn" id="warn"></div>
+    <div class="stats" id="stats"></div>
+    <div class="strip" id="strip"><div class="fill" id="stripFill"></div><div class="lbl" id="stripLblA"></div><div class="lbl" id="stripLblR" style="right:0"></div></div>
+    <div class="striplegend"><span>auto-accept</span><span>human review</span></div>
+    <div id="chart"></div>
+  </div>
+</section>
+</main>
+
+<footer class="wrap">
+  All computation happens client-side - nothing you paste leaves this page. Threshold guarantee: one-sided Wilson lower bound on auto-accept precision. · <span id="yr"></span> FieldTrust
+</footer>
+</div>
+
+<div class="pop" id="pop" role="tooltip"></div>
+
+<script id="fieldtrust-core">
+// FieldTrust core - JS port of json_spans.py / alignment.py / calibrate.py
+// Pure functions, no DOM. Testable in Node.
+
+// ---------- position-aware JSON scanner ----------
+function extractValueSpans(text) {
+  let pos = 0;
+  const spans = {};
+  const WS = " \t\n\r";
+
+  function peek() {
+    if (pos >= text.length) throw new Error("Unexpected end of input");
+    return text[pos];
+  }
+  function skipWs() { while (pos < text.length && WS.includes(text[pos])) pos++; }
+  function expect(ch) {
+    if (peek() !== ch) throw new Error(`Expected ${ch} at ${pos}, got ${peek()}`);
+    pos++;
+  }
+  function parseString() {
+    expect('"');
+    let out = "";
+    for (;;) {
+      const ch = peek(); pos++;
+      if (ch === '"') return out;
+      if (ch === "\\") {
+        const esc = peek(); pos++;
+        if (esc === "u") {
+          out += String.fromCharCode(parseInt(text.slice(pos, pos + 4), 16));
+          pos += 4;
+        } else {
+          out += ({ n: "\n", t: "\t", r: "\r", b: "\b", f: "\f" }[esc] ?? esc);
+        }
+      } else out += ch;
+    }
+  }
+  function parseNumber() {
+    if (peek() === "-") pos++;
+    while (pos < text.length && "0123456789.eE+-".includes(text[pos])) pos++;
+  }
+  function parseValue(path) {
+    skipWs();
+    const ch = peek();
+    const start = pos;
+    if (ch === "{") { parseObject(path); spans[path] = { start, end: pos, kind: "object" }; }
+    else if (ch === "[") { parseArray(path); spans[path] = { start, end: pos, kind: "array" }; }
+    else if (ch === '"') { parseString(); spans[path] = { start, end: pos, kind: "string" }; }
+    else if ("-0123456789".includes(ch)) { parseNumber(); spans[path] = { start, end: pos, kind: "number" }; }
+    else if (text.startsWith("true", pos)) { pos += 4; spans[path] = { start, end: pos, kind: "bool" }; }
+    else if (text.startsWith("false", pos)) { pos += 5; spans[path] = { start, end: pos, kind: "bool" }; }
+    else if (text.startsWith("null", pos)) { pos += 4; spans[path] = { start, end: pos, kind: "null" }; }
+    else throw new Error(`Unexpected character ${ch} at ${pos}`);
+  }
+  function parseObject(path) {
+    expect("{"); skipWs();
+    if (peek() === "}") { pos++; return; }
+    for (;;) {
+      skipWs();
+      const key = parseString();
+      skipWs(); expect(":");
+      parseValue(`${path}.${key}`);
+      skipWs();
+      if (peek() === ",") { pos++; continue; }
+      expect("}"); return;
+    }
+  }
+  function parseArray(path) {
+    expect("["); skipWs();
+    if (peek() === "]") { pos++; return; }
+    let i = 0;
+    for (;;) {
+      parseValue(`${path}[${i}]`); i++;
+      skipWs();
+      if (peek() === ",") { pos++; continue; }
+      expect("]"); return;
+    }
+  }
+
+  skipWs();
+  parseValue("$");
+  skipWs();
+  if (pos !== text.length) throw new Error(`Trailing data at ${pos}`);
+  return spans;
+}
+
+// ---------- token alignment ----------
+// tokens: [{text, logprob, secondLogprob|null}]
+function scoreFields(tokens, { leavesOnly = true, stripQuotes = true } = {}) {
+  const full = tokens.map(t => t.text).join("");
+  // tolerate markdown fences / prose around the JSON object
+  const jStart = full.indexOf("{");
+  const jEnd = full.lastIndexOf("}") + 1;
+  if (jStart < 0 || jEnd <= jStart) throw new Error("No JSON object found in tokens");
+  const spansRel = extractValueSpans(full.slice(jStart, jEnd));
+
+  const offsets = [];
+  let p = 0;
+  for (const t of tokens) { offsets.push([p, p + t.text.length]); p += t.text.length; }
+
+  const out = {};
+  for (const [path, span] of Object.entries(spansRel)) {
+    if (leavesOnly && (span.kind === "object" || span.kind === "array")) continue;
+    let start = span.start + jStart, end = span.end + jStart;
+    if (stripQuotes && span.kind === "string" && end - start >= 2) {
+      if (start + 1 < end - 1) { start += 1; end -= 1; }
+    }
+    const lps = [], margins = [], toks = [];
+    tokens.forEach((tok, i) => {
+      const [ts, te] = offsets[i];
+      if (ts < end && te > start) {
+        lps.push(tok.logprob);
+        toks.push({ text: tok.text, logprob: tok.logprob });
+        if (tok.secondLogprob != null) margins.push(tok.logprob - tok.secondLogprob);
+      }
+    });
+    if (!lps.length) continue;
+    const mean = lps.reduce((a, b) => a + b, 0) / lps.length;
+    const sum = lps.reduce((a, b) => a + b, 0);
+    out[path] = {
+      path, kind: span.kind, nTokens: lps.length,
+      meanLogprob: mean, minLogprob: Math.min(...lps), sumLogprob: sum,
+      meanMargin: margins.length ? margins.reduce((a, b) => a + b, 0) / margins.length : null,
+      geoProb: Math.exp(mean), minProb: Math.exp(Math.min(...lps)), jointProb: Math.exp(sum),
+      tokens: toks,
+      rawStart: span.start + jStart, rawEnd: span.end + jStart,
+    };
+  }
+  return { fields: out, fullText: full, jsonStart: jStart, jsonEnd: jEnd };
+}
+
+// Accepts: full chat-completion response object, a `choices[0]` object,
+// a `logprobs` object, or the `logprobs.content` array directly.
+function tokensFromOpenAI(input) {
+  let content = input;
+  if (content && content.choices) content = content.choices[0];
+  if (content && content.logprobs) content = content.logprobs;
+  if (content && content.content) content = content.content;
+  if (!Array.isArray(content)) throw new Error("Could not find logprobs.content array");
+  return content.map(item => {
+    let second = null;
+    const others = (item.top_logprobs || []).filter(c => c.token !== item.token);
+    if (others.length) second = Math.max(...others.map(c => c.logprob));
+    return { text: item.token, logprob: item.logprob, secondLogprob: second };
+  });
+}
+
+// ---------- Wilson threshold ----------
+function normPpf(p) {
+  const a = [-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02,
+             1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00];
+  const b = [-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02,
+             6.680131188771972e+01, -1.328068155288572e+01];
+  const c = [-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00,
+             -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00];
+  const d = [7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00,
+             3.754408661907416e+00];
+  const plow = 0.02425, phigh = 1 - plow;
+  let q, r;
+  if (p < plow) {
+    q = Math.sqrt(-2 * Math.log(p));
+    return (((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) /
+           ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);
+  }
+  if (p > phigh) {
+    q = Math.sqrt(-2 * Math.log(1 - p));
+    return -(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) /
+           ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);
+  }
+  q = p - 0.5; r = q * q;
+  return (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q /
+         (((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1);
+}
+
+function wilsonLowerBound(k, n, delta) {
+  if (n === 0) return 0;
+  const z = normPpf(1 - delta);
+  const phat = k / n;
+  const denom = 1 + z * z / n;
+  const center = phat + z * z / (2 * n);
+  const rad = z * Math.sqrt(phat * (1 - phat) / n + z * z / (4 * n * n));
+  return Math.max(0, (center - rad) / denom);
+}
+
+// scores: number[], correct: boolean[]
+function fitThreshold(scores, correct, targetPrecision = 0.95, delta = 0.05) {
+  const idx = scores.map((_, i) => i).sort((a, b) => scores[b] - scores[a]);
+  const s = idx.map(i => scores[i]);
+  const y = idx.map(i => correct[i]);
+  const n = s.length;
+  let cum = 0, best = null;
+  const curve = []; // for risk-coverage plot
+  for (let i = 1; i <= n; i++) {
+    cum += y[i - 1] ? 1 : 0;
+    const lcb = wilsonLowerBound(cum, i, delta);
+    curve.push({ coverage: i / n, precision: cum / i, lcb, score: s[i - 1] });
+    if (lcb >= targetPrecision) best = { i, k: cum, lcb };
+  }
+  if (!best) {
+    return { feasible: false, threshold: Infinity, targetPrecision, delta, nCalib: n,
+             autoAcceptRate: 0, empiricalPrecision: NaN, precisionLowerBound: 0, curve };
+  }
+  return {
+    feasible: true, threshold: s[best.i - 1], targetPrecision, delta, nCalib: n,
+    autoAcceptRate: best.i / n, empiricalPrecision: best.k / best.i,
+    precisionLowerBound: best.lcb, curve,
+  };
+}
+
+
+
+</script>
+<script>
+// ---------- demo data ----------
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function demoCalib(){const r=mulberry32(7),s=[],c=[];for(let i=0;i<500;i++){const sc=-3*r();s.push(sc);c.push(r()<1/(1+Math.exp(-(3*sc+5.5))))}return{scores:s,correct:c}}
+
+function tok(t,lp,second){const o={token:t,logprob:lp};if(second!=null)o.top_logprobs=[{token:t,logprob:lp},{token:"·",logprob:second}];return o}
+const DEMO_RESPONSE={choices:[{message:{content:""},logprobs:{content:[
+ tok('{"',-0.0005),tok('vendor',-0.0008),tok('":',-0.0006),tok(' "',-0.001),
+ tok('Star',-0.012,-5.4),tok('bucks',-0.018,-5.1),tok('",',-0.0009),
+ tok(' "',-0.0007),tok('date',-0.0008),tok('":',-0.0006),tok(' "',-0.001),
+ tok('202',-0.05,-3.6),tok('4',-0.09,-3.1),tok('-02-',-1.92,-2.05),tok('31',-2.31,-2.42),tok('",',-0.001),
+ tok(' "',-0.0008),tok('total',-0.0009),tok('":',-0.0007),tok(' ',-0.001),
+ tok('18',-0.22,-2.6),tok('.',-0.04,-3.9),tok('40',-0.31,-1.9),tok(',',-0.0009),
+ tok(' "',-0.0008),tok('currency',-0.0009),tok('":',-0.0006),tok(' "',-0.001),
+ tok('USD',-0.03,-4.2),tok('",',-0.0009),
+ tok(' "',-0.0008),tok('items',-0.0009),tok('":',-0.0007),tok(' [',-0.001),
+ tok('{"',-0.0008),tok('name',-0.0009),tok('":',-0.0006),tok(' "',-0.001),
+ tok('Latte',-0.08,-3.2),tok('",',-0.001),tok(' "',-0.0008),tok('qty',-0.0009),tok('":',-0.0006),
+ tok(' ',-0.001),tok('2',-0.14,-2.4),tok('},',-0.001),
+ tok(' {"',-0.0008),tok('name',-0.0009),tok('":',-0.0006),tok(' "',-0.001),
+ tok('Blue',-0.95,-1.35),tok('berry',-0.42,-1.7),tok(' Muffin',-0.66,-1.2),tok('",',-0.001),
+ tok(' "',-0.0008),tok('qty',-0.0009),tok('":',-0.0006),tok(' ',-0.001),tok('1',-0.06,-3.5),
+ tok('}]',-0.001),tok('}',-0.0006)
+]}}]};
+
+// ---------- state ----------
+let calib=demoCalib();
+let fitRes=null;
+let fields={};
+
+// ---------- helpers ----------
+const $=id=>document.getElementById(id);
+const esc=s=>s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const pct=x=>(x*100).toFixed(1)+"%";
+
+function decide(f){return fitRes&&fitRes.feasible&&f.meanLogprob>=fitRes.threshold?"auto":"review"}
+
+// ---------- annotated JSON (signature) ----------
+function renderHero(){
+  // rebuild from the token concatenation captured in analyze()
+  const raw=window.__fullText;
+  const js=raw.indexOf("{"),je=raw.lastIndexOf("}")+1;
+  const data=JSON.parse(raw.slice(js,je));
+  $("hero").innerHTML=renderNode(data,"$",0);
+  bindPopovers();
+}
+function renderNode(v,path,ind){
+  const pad="  ".repeat(ind),pad2="  ".repeat(ind+1);
+  if(Array.isArray(v)){
+    if(!v.length)return"[]";
+    return"[\n"+v.map((x,i)=>pad2+renderNode(x,`${path}[${i}]`,ind+1)).join(",\n")+"\n"+pad+"]";
+  }
+  if(v!==null&&typeof v==="object"){
+    const keys=Object.keys(v);
+    if(!keys.length)return"{}";
+    return"{\n"+keys.map(k=>`${pad2}<span class="jk">"${esc(k)}"</span>: `+renderNode(v[k],`${path}.${k}`,ind+1)).join(",\n")+"\n"+pad+"}";
+  }
+  const lit=esc(JSON.stringify(v));
+  const f=fields[path];
+  if(!f)return lit;
+  const d=decide(f);
+  return`<span class="val ${d}" data-path="${esc(path)}" tabindex="0">${lit}<span class="bar" style="width:${Math.max(6,f.geoProb*100)}%"></span></span>`;
+}
+
+// ---------- popover ----------
+function bindPopovers(){
+  const pop=$("pop");
+  document.querySelectorAll(".val").forEach(el=>{
+    const show=()=>{
+      const f=fields[el.dataset.path];if(!f)return;
+      const rows=f.tokens.map(t=>{
+        const p=Math.exp(t.logprob);
+        return`<div class="trow"><span class="tk">${esc(JSON.stringify(t.text))}</span><span class="tb" style="width:${Math.max(2,p*90)}px"></span><span class="tp">${(p*100).toFixed(1)}%</span></div>`;
+      }).join("");
+      const mg=f.meanMargin!=null?f.meanMargin.toFixed(2):"–";
+      pop.innerHTML=`<div class="pth">${esc(f.path)}</div>${rows}<div class="st">geo ${pct(f.geoProb)} · min ${pct(f.minProb)} · margin ${mg}</div>`;
+      const r=el.getBoundingClientRect();
+      pop.style.display="block";
+      pop.style.left=Math.min(r.left,window.innerWidth-320)+"px";
+      pop.style.top=(r.bottom+8)+"px";
+    };
+    const hide=()=>{pop.style.display="none"};
+    el.addEventListener("mouseenter",show);el.addEventListener("mouseleave",hide);
+    el.addEventListener("focus",show);el.addEventListener("blur",hide);
+    el.addEventListener("click",e=>{e.stopPropagation();show()});
+  });
+  document.addEventListener("click",()=>{pop.style.display="none"});
+}
+
+// ---------- table ----------
+function renderTable(){
+  const rows=Object.values(fields).sort((a,b)=>a.meanLogprob-b.meanLogprob).map(f=>{
+    const d=decide(f);
+    const mg=f.meanMargin!=null?f.meanMargin.toFixed(2):"–";
+    return`<tr><td>${esc(f.path)}</td><td class="num">${pct(f.geoProb)}</td><td class="num">${pct(f.minProb)}</td><td class="num">${mg}</td><td><span class="pill ${d}">${d==="auto"?"AUTO-ACCEPT":"REVIEW"}</span></td></tr>`;
+  }).join("");
+  $("tableWrap").innerHTML=`<table><thead><tr><th>Field</th><th class="num">Conf (geo)</th><th class="num">Min tok</th><th class="num">Margin</th><th>Decision</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+// ---------- threshold panel ----------
+function renderThreshold(){
+  const r=fitRes;
+  const warn=$("warn");
+  if(!r.feasible){
+    warn.style.display="block";
+    warn.textContent="Target not achievable with this calibration set at the chosen confidence - lower the target precision or add labeled data. All fields are routed to review.";
+  }else warn.style.display="none";
+  const cells=[
+    [r.feasible?r.threshold.toFixed(3):"-","threshold (mean logprob)"],
+    [r.feasible?pct(r.autoAcceptRate):"0%","auto-accept rate"],
+    [r.feasible?pct(r.empiricalPrecision):"-","empirical precision"],
+    [r.feasible?pct(r.precisionLowerBound):"-","precision lower bound"],
+  ];
+  $("stats").innerHTML=cells.map(([b,s])=>`<div class="stat"><b>${b}</b><span>${s}</span></div>`).join("");
+  const ar=r.feasible?r.autoAcceptRate:0;
+  $("stripFill").style.width=pct(ar);
+  $("stripLblA").textContent=r.feasible?pct(ar):"0%";
+  $("stripLblR").textContent=pct(1-ar);
+  renderChart();
+}
+function renderChart(){
+  const W=560,H=200,L=42,B=26,T=10,R=12;
+  const c=fitRes.curve;
+  const x=v=>L+v*(W-L-R), y=v=>T+(1-(v-0.6)/0.4)*(H-T-B); // y domain [0.6,1]
+  const cl=v=>Math.max(0.6,Math.min(1,v));
+  const path=k=>c.map((p,i)=>`${i?"L":"M"}${x(p.coverage).toFixed(1)},${y(cl(p[k])).toFixed(1)}`).join(" ");
+  const tgt=y(cl(fitRes.targetPrecision));
+  let marker="";
+  if(fitRes.feasible){
+    const mx=x(fitRes.autoAcceptRate);
+    marker=`<line x1="${mx}" y1="${T}" x2="${mx}" y2="${H-B}" stroke="#14201D" stroke-width="1.5"/><circle cx="${mx}" cy="${y(cl(fitRes.precisionLowerBound))}" r="4" fill="#0B7A66"/>`;
+  }
+  $("chart").innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Risk-coverage curve">
+    <line x1="${L}" y1="${H-B}" x2="${W-R}" y2="${H-B}" stroke="#D9E2DF"/>
+    <line x1="${L}" y1="${T}" x2="${L}" y2="${H-B}" stroke="#D9E2DF"/>
+    ${[0.6,0.7,0.8,0.9,1].map(v=>`<text x="${L-6}" y="${y(v)+3}" text-anchor="end">${(v*100).toFixed(0)}</text><line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="#EEF3F1"/>`).join("")}
+    ${[0,0.25,0.5,0.75,1].map(v=>`<text x="${x(v)}" y="${H-B+14}" text-anchor="middle">${(v*100).toFixed(0)}%</text>`).join("")}
+    <line x1="${L}" x2="${W-R}" y1="${tgt}" y2="${tgt}" stroke="#B4790F" stroke-dasharray="5 4"/>
+    <path d="${path('precision')}" fill="none" stroke="#5F6F6A" stroke-width="1.4"/>
+    <path d="${path('lcb')}" fill="none" stroke="#0B7A66" stroke-width="2"/>
+    ${marker}
+    <text x="${W-R}" y="${tgt-5}" text-anchor="end" fill="#B4790F">target</text>
+    <text x="${L+6}" y="${T+10}">precision (grey) · Wilson LCB (teal) vs coverage</text>
+  </svg>`;
+}
+
+// ---------- actions ----------
+function analyze(){
+  $("respErr").style.display="none";
+  try{
+    const parsed=JSON.parse($("respIn").value);
+    const toks=tokensFromOpenAI(parsed);
+    const res=scoreFields(toks);
+    fields=res.fields; window.__fullText=res.fullText;
+    renderHero();renderTable();
+  }catch(e){
+    $("respErr").textContent="Could not parse: "+e.message;
+    $("respErr").style.display="block";
+  }
+}
+function refit(){
+  $("csvErr").style.display="none";
+  let data=calib;
+  if($("tabCsv").classList.contains("on")){
+    try{
+      const s=[],c=[];
+      $("csvIn").value.trim().split(/\n+/).forEach(line=>{
+        const[a,b]=line.split(/[,\t]/);const sc=parseFloat(a),cc=parseInt(b);
+        if(!isNaN(sc)&&!isNaN(cc)){s.push(sc);c.push(!!cc)}
+      });
+      if(s.length<20)throw new Error("need at least 20 rows");
+      data={scores:s,correct:c};
+    }catch(e){
+      $("csvErr").textContent=e.message;$("csvErr").style.display="block";return;
+    }
+  }
+  fitRes=fitThreshold(data.scores,data.correct,parseFloat($("target").value),parseFloat($("delta").value));
+  renderThreshold();
+  if(Object.keys(fields).length){renderHero();renderTable()}
+}
+
+// tabs
+function tabPair(a,b,onA,onB){
+  $(a).addEventListener("click",()=>{$(a).classList.add("on");$(b).classList.remove("on");onA()});
+  $(b).addEventListener("click",()=>{$(b).classList.add("on");$(a).classList.remove("on");onB()});
+}
+tabPair("tabSample","tabPaste",
+  ()=>{$("respIn").value=JSON.stringify(DEMO_RESPONSE,null,1);analyze()},
+  ()=>{$("respIn").value="";$("respIn").placeholder="Paste the full chat.completions response JSON here (with logprobs)…";$("respIn").focus()});
+tabPair("tabSynth","tabCsv",
+  ()=>{$("csvIn").style.display="none";refit()},
+  ()=>{$("csvIn").style.display="block";$("csvIn").focus()});
+
+$("analyze").addEventListener("click",analyze);
+$("fit").addEventListener("click",refit);
+$("target").addEventListener("input",()=>{$("targetOut").textContent=Math.round($("target").value*100)+"%";refit()});
+$("delta").addEventListener("change",refit);
+$("yr").textContent=new Date().getFullYear();
+
+// boot
+$("respIn").value=JSON.stringify(DEMO_RESPONSE,null,1);
+refit();
+analyze();
+</script>
+</body>
+</html>

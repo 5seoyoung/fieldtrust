@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fieldtrust"
+version = "0.0.1"
+description = "Per-field calibrated confidence for LLM structured outputs"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+dependencies = ["numpy>=1.24"]
+
+[project.optional-dependencies]
+openai = ["openai>=1.40"]
+
+[tool.setuptools.packages.find]
+include = ["fieldtrust*"]
