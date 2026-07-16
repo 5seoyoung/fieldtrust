@@ -56,8 +56,8 @@ function refit() {
   if ($("tabCsv").classList.contains("on")) {
     // accepts the 2-column form and the 4-column form review exports
     const parsed = parseLabelCsv($("csvIn").value);
-    if (parsed.scores.length < 20) {
-      $("csvErr").textContent = `need at least 20 usable rows, got ${parsed.scores.length}` +
+    if (parsed.scores.length < MIN_CALIB_ROWS) {
+      $("csvErr").textContent = `need at least ${MIN_CALIB_ROWS} usable rows, got ${parsed.scores.length}` +
         (parsed.skipped ? ` (${parsed.skipped} row(s) unparsable)` : "");
       $("csvErr").style.display = "block";
       return;
@@ -77,7 +77,7 @@ function refit() {
 // ---------- batch ----------
 async function loadBatch() {
   $("batchErr").style.display = "none";
-  const text = $("tabBatchDemo").classList.contains("on") ? demoBatch(120) : $("batchIn").value;
+  const text = $("tabBatchDemo").classList.contains("on") ? DEMO_BATCH_JSONL : $("batchIn").value;
   if (!text.trim()) {
     $("batchErr").textContent = "Paste JSONL or choose a file first.";
     $("batchErr").style.display = "block";
@@ -201,31 +201,38 @@ function exportPolicy() {
 }
 
 function renderHist(docs, thr) {
-  const values = [];
-  for (const d of docs) for (const f of Object.values(d.fields)) values.push(f.meanLogprob);
-  const bins = histogramBins(values, 28);
-  const W = 560, H = 180, L = 34, B = 26, T = 8, R = 10;
-  const maxC = bins.reduce((m, b) => Math.max(m, b.count), 1);
-  const x0 = bins[0].x0, x1 = bins[bins.length - 1].x1;
-  const x = v => L + ((v - x0) / (x1 - x0)) * (W - L - R);
-  const y = c => T + (1 - c / maxC) * (H - T - B);
-  const bw = Math.max(1, (W - L - R) / bins.length - 1.5);
+  const fields = [];
+  for (const d of docs) for (const f of Object.values(d.fields)) fields.push(f);
+  const buckets = confidenceBuckets(fields, thr);
+  const W = 560, H = 190, L = 34, B = 34, T = 8, R = 10;
+  const maxC = buckets.reduce((m, b) => Math.max(m, b.count), 1);
+  const slot = (W - L - R) / buckets.length;
+  const bw = slot - 8;
+  const h = c => (c / maxC) * (H - T - B);
 
-  const bars = bins.map(b => {
-    const auto = Number.isFinite(thr) && b.x0 >= thr;
-    return `<rect x="${x(b.x0).toFixed(1)}" y="${y(b.count).toFixed(1)}" width="${bw.toFixed(1)}" ` +
-      `height="${(H - B - y(b.count)).toFixed(1)}" fill="${auto ? "#0B7A66" : "#B23A2B"}" opacity="${auto ? 0.85 : 0.7}"/>`;
+  // stacked: review at the bottom, auto on top. A bucket the threshold runs
+  // through is drawn as both, which is what is actually true of it.
+  const bars = buckets.map((b, i) => {
+    const x = L + i * slot + 4;
+    const hr = h(b.review), ha = h(b.auto);
+    return `<rect x="${x.toFixed(1)}" y="${(H - B - hr).toFixed(1)}" width="${bw.toFixed(1)}" height="${hr.toFixed(1)}" fill="#B23A2B" opacity=".75"/>` +
+      `<rect x="${x.toFixed(1)}" y="${(H - B - hr - ha).toFixed(1)}" width="${bw.toFixed(1)}" height="${ha.toFixed(1)}" fill="#0B7A66" opacity=".85"/>` +
+      (b.count ? `<text x="${(x + bw / 2).toFixed(1)}" y="${(H - B - hr - ha - 4).toFixed(1)}" text-anchor="middle">${b.count}</text>` : "");
   }).join("");
-  const line = Number.isFinite(thr) && thr >= x0 && thr <= x1
-    ? `<line x1="${x(thr).toFixed(1)}" y1="${T}" x2="${x(thr).toFixed(1)}" y2="${H - B}" stroke="#14201D" stroke-width="1.5"/>` +
-      `<text x="${x(thr).toFixed(1)}" y="${T + 9}" text-anchor="middle" fill="#14201D">threshold</text>` : "";
+
+  const label = b => b.hi === 1 ? "100%" : (b.hi * 100).toFixed(b.hi >= 0.99 ? 1 : 0) + "%";
+  const ticks = buckets.map((b, i) =>
+    `<text x="${(L + i * slot + slot / 2).toFixed(1)}" y="${H - B + 13}" text-anchor="middle">${
+      b.lo === 0 ? "<" + label(b) : label(b)}</text>`).join("");
 
   $("hist").innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Confidence distribution across the batch">
     <line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" stroke="#D9E2DF"/>
-    ${bars}${line}
-    ${[x0, (x0 + x1) / 2, x1].map(v => `<text x="${x(v).toFixed(1)}" y="${H - B + 14}" text-anchor="middle">${v.toFixed(2)}</text>`).join("")}
-    <text x="${L}" y="${H - 4}" text-anchor="start">mean logprob per field ->  higher = more confident</text>
-    <text x="${L - 6}" y="${y(maxC) + 4}" text-anchor="end">${maxC}</text>
+    ${bars}${ticks}
+    <text x="${L}" y="${H - 4}" text-anchor="start">field confidence (geometric mean) ->  right = the model was sure</text>
+    <rect x="${L}" y="${T}" width="8" height="8" fill="#0B7A66" opacity=".85"/>
+    <text x="${L + 12}" y="${T + 8}" text-anchor="start" fill="#0B7A66">auto-accept</text>
+    <rect x="${L + 78}" y="${T}" width="8" height="8" fill="#B23A2B" opacity=".75"/>
+    <text x="${L + 90}" y="${T + 8}" text-anchor="start" fill="#B23A2B">review</text>
   </svg>`;
 }
 

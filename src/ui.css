@@ -109,6 +109,10 @@ footer{border-top:1px solid var(--line);padding:16px 0 30px;color:var(--muted);f
 .segbtn:focus-visible{outline:2px solid var(--certain);outline-offset:-2px}
 .modenote{font-family:var(--mono);font-size:11px;color:var(--muted)}
 
+.prov{font-size:11.5px;line-height:1.5;color:var(--muted);background:#F4F7F6;border:1px solid #E4EBE9;
+  border-radius:6px;padding:7px 9px;margin-bottom:10px}
+.prov b{color:var(--ink);font-family:var(--mono);font-size:11px}
+
 .policynote{font-size:12.5px;color:var(--muted);margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #ECF1EF}
 .policynote b{font-family:var(--mono);color:var(--ink)}
 .cta .sub{margin-bottom:0}
@@ -219,6 +223,10 @@ kbd{font-family:var(--mono);font-size:10.5px;background:var(--ink);color:#fff;bo
 .prose h2{font-size:19px;margin-bottom:10px}
 .prose h3{font-family:var(--disp);font-size:14px;margin:16px 0 5px}
 .prose p{font-size:13.5px;color:#3E4E4A;margin-bottom:9px}
+.prose b{font-family:var(--mono);font-size:12.5px;color:var(--ink)}
+.limits{margin:0 0 9px 18px;font-size:13.5px;color:#3E4E4A}
+.limits li{margin-bottom:5px}
+.limits b{font-family:var(--body);font-size:13.5px}
 .aboutlinks{margin-top:16px;padding-top:12px;border-top:1px solid #ECF1EF;font-family:var(--mono);font-size:12px}
 
 @media(prefers-reduced-motion:no-preference){.val{transition:background .25s}.strip .fill{transition:width .25s}}

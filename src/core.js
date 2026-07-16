@@ -324,24 +324,31 @@ function aggregateByPath(docs, threshold) {
   return rows.sort((a, b) => b.belowRate - a.belowRate || a.meanLogprob - b.meanLogprob);
 }
 
-// Equal-width bins over `values`. Loop-based (not Math.min(...values)) so a
-// 10k-field batch cannot blow the call stack.
-function histogramBins(values, nBins = 24) {
-  if (!values.length) return [];
-  let min = Infinity, max = -Infinity;
-  for (const v of values) { if (v < min) min = v; if (v > max) max = v; }
-  if (min === max) { min -= 0.5; max += 0.5; }
-  const width = (max - min) / nBins;
-  const bins = Array.from({ length: nBins }, (_, i) => ({
-    x0: min + i * width, x1: min + (i + 1) * width, count: 0,
-  }));
-  for (const v of values) {
-    let i = Math.floor((v - min) / width);
-    if (i >= nBins) i = nBins - 1;
-    if (i < 0) i = 0;
-    bins[i].count++;
+// Confidence buckets, not equal-width bins.
+//
+// Real extraction scores are not spread out: on a captured batch 73% of fields
+// sit at exactly logprob 0 and the rest trail off to about -0.8. Equal-width
+// bins put ~95% of the mass in one bar and hide the threshold inside it, which
+// is worse than useless - the chart said "all review" while the batch was 93%
+// auto-accept. These edges spend their resolution where the decision is.
+const CONF_EDGES = [0, 0.5, 0.8, 0.9, 0.95, 0.99, 0.999, 1];
+
+// Each bucket is split by the policy, so a bucket the threshold cuts through
+// shows both parts instead of being forced into one colour.
+function confidenceBuckets(fields, threshold) {
+  const buckets = [];
+  for (let i = 0; i < CONF_EDGES.length - 1; i++) {
+    buckets.push({ lo: CONF_EDGES[i], hi: CONF_EDGES[i + 1], auto: 0, review: 0, count: 0 });
   }
-  return bins;
+  for (const f of fields) {
+    const p = Math.exp(f.meanLogprob);
+    let i = buckets.findIndex(b => p < b.hi);
+    if (i < 0) i = buckets.length - 1;          // p === 1 lands in the top bucket
+    const b = buckets[i];
+    b.count++;
+    if (Number.isFinite(threshold) && f.meanLogprob >= threshold) b.auto++; else b.review++;
+  }
+  return buckets;
 }
 
 // Rollup of a batch against the current policy.
@@ -414,6 +421,10 @@ function reviewQueue(docs, threshold) {
 }
 
 // ---------- label CSV ----------
+// Below this a Wilson bound is too wide to be worth fitting, so the calibrator
+// refuses rather than issuing a guarantee it cannot support.
+const MIN_CALIB_ROWS = 20;
+
 function csvCell(v) {
   const s = String(v);
   return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;

@@ -179,17 +179,23 @@ function renderReviewDone() {
     ? `The other ${nfmt(s.nFields - r.items.length)} auto-accepted with precision guaranteed at &ge; ${pct(state.fit.targetPrecision, 0)}.`
     : `No feasible policy is fitted, so nothing auto-accepted.`;
 
+  // Refitting on a handful of labels would produce a bound so wide it is
+  // useless, so the calibrator refuses under MIN_CALIB_ROWS. Say that here
+  // rather than letting the button fail with an error further up the page.
+  const enough = Object.keys(r.decisions).length >= MIN_CALIB_ROWS;
+
   $("reviewBody").innerHTML = `
     <div class="rvdone">
       <div class="rvdonehd">Queue cleared</div>
       <p>You reviewed <b>${nfmt(r.items.length)}</b> of ${nfmt(s.nFields)} fields (${pct(share)}). ${guarantee}</p>
       <p class="rvdonesub">${nfmt(r.items.length - edits)} approved · ${nfmt(edits)} corrected. That is a labeled set - feed it back and the next batch needs less review.</p>
       <div class="rvdoneact">
-        <button class="btn" id="rvRefit">Refit threshold with these labels</button>
+        <button class="btn" id="rvRefit"${enough ? "" : " disabled"}>Refit threshold with these labels</button>
         <button class="btn ghost" id="rvBack">Back to queue</button>
       </div>
+      ${enough ? "" : `<p class="rvdonesub" id="rvRefitWhy">Refitting needs at least ${MIN_CALIB_ROWS} labelled fields; this queue produced ${nfmt(Object.keys(r.decisions).length)}. Review a larger batch, or export the labels and pool them with earlier runs.</p>`}
     </div>`;
-  $("rvRefit").addEventListener("click", refitFromReview);
+  if (enough) $("rvRefit").addEventListener("click", refitFromReview);
   // reopening lets you walk back through decisions after clearing the queue
   $("rvBack").addEventListener("click", () => {
     state.review.reopened = true;
@@ -199,14 +205,32 @@ function renderReviewDone() {
 }
 
 // ---------- the flywheel (PLAN_v2 1.1) ----------
-// Review output is calibration input. One click, no file round-trip.
+// Review output is calibration input - but not on its own. The queue only ever
+// contains fields BELOW the threshold, so its labels are a censored sample of
+// the score distribution. Fitting on them alone estimates precision from the
+// tail and lands on "review everything", which is the opposite of the point.
+//
+// Pooling them into the existing calibration set is sound for the region that
+// matters: every review label sits below the current threshold, so it cannot
+// bias the precision estimate for any candidate threshold above it, and it
+// sharpens the estimate near the boundary where the choice is actually made.
 function refitFromReview() {
-  const csv = toLabelCsv(state.review.items, state.review.decisions);
+  const rows = [];
+  for (let i = 0; i < state.calib.scores.length; i++) {
+    rows.push(`calib-${i},$,${state.calib.scores[i].toFixed(6)},${state.calib.correct[i] ? 1 : 0}`);
+  }
+  const fresh = toLabelCsv(state.review.items, state.review.decisions).trim().split("\n").slice(1);
+  const csv = "doc_id,field_path,score,correct\n" + rows.concat(fresh).join("\n") + "\n";
+
   $("csvIn").value = csv;
   $("csvIn").style.display = "block";
   $("tabCsv").classList.add("on");
   $("tabSynth").classList.remove("on");
   refit();
+  $("csvErr").style.display = "none";
+  $("calibProv").innerHTML = `<b>${nfmt(state.calib.scores.length)}</b> fields: your existing ` +
+    `calibration set plus <b>${nfmt(fresh.length)}</b> labels from this review. Review only ever ` +
+    `surfaces below-threshold fields, so these sharpen the boundary rather than replace the set.`;
   const body = $("reviewBody");
   if (body.scrollIntoView) body.scrollIntoView({ block: "nearest" });
 }

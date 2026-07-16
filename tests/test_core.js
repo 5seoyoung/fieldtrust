@@ -29,7 +29,7 @@ function loadCore() {
     m[1] +
       "\nreturn { extractValueSpans, scoreFields, tokensFromOpenAI, wilsonLowerBound, fitThreshold," +
       " detectMode, segmentSentences, scoreSentences, parseBatch, normalizePath, aggregateByPath," +
-      " histogramBins, batchSummary, pathSegments, getByPath, setByPath, reviewQueue, itemKey," +
+      " confidenceBuckets, batchSummary, pathSegments, getByPath, setByPath, reviewQueue, itemKey," +
       " toLabelCsv, parseLabelCsv, toCorrectedJsonl, toPolicyJson, hashText };"
   );
   return factory();
@@ -238,15 +238,21 @@ test("core: aggregateByPath with no policy reports nothing below threshold", () 
   assert.ok(rows.every(r => r.belowCount === 0));
 });
 
-test("core: histogramBins covers the range and counts every value", () => {
-  const bins = core.histogramBins([-3, -2, -1, 0], 4);
-  assert.equal(bins.length, 4);
-  assert.equal(bins.reduce((a, b) => a + b.count, 0), 4);
-  assert.ok(Math.abs(bins[0].x0 - (-3)) < 1e-12);
-  assert.ok(Math.abs(bins[3].x1 - 0) < 1e-12);
-  assert.equal(bins[3].count, 1, "max value lands in the last bin, not out of range");
-  assert.deepEqual(core.histogramBins([], 4), []);
-  assert.equal(core.histogramBins([1, 1, 1], 4).reduce((a, b) => a + b.count, 0), 3);
+test("core: confidenceBuckets splits each bucket by the policy", () => {
+  const f = lp => ({ meanLogprob: lp });
+  // 0 -> 100%, -0.02 -> 98%, -0.7 -> 49.7%
+  const b = core.confidenceBuckets([f(0), f(0), f(-0.02), f(-0.7)], -0.021);
+  assert.equal(b.reduce((a, x) => a + x.count, 0), 4, "every field lands in a bucket");
+  assert.equal(b[b.length - 1].count, 2, "logprob 0 is 100% confident, not out of range");
+  assert.equal(b[b.length - 1].auto, 2);
+  assert.equal(b[0].count, 1, "the 49.7% field is in the <50% bucket");
+  assert.equal(b[0].review, 1);
+  // a bucket the threshold cuts through reports both sides rather than picking
+  // both ~99%, so the same bucket, but on either side of the threshold
+  const straddle = core.confidenceBuckets([f(-0.005), f(-0.008)], -0.006);
+  const cut = straddle.find(x => x.count === 2);
+  assert.ok(cut && cut.auto === 1 && cut.review === 1);
+  assert.equal(core.confidenceBuckets([], -0.5).reduce((a, x) => a + x.count, 0), 0);
 });
 
 test("core: batchSummary routes everything to review without a policy", () => {
@@ -427,21 +433,42 @@ test("app: boots with demo response, renders annotated fields incl. nested paths
   assert.ok(paths.includes("$.items[1].qty"));
 });
 
-test("app: demo-set threshold fit matches verified values (-0.676 / 23.6% / 95.0%)", () => {
+test("app: the policy fitted on the real label set meets its target", () => {
   const w = bootPage();
   const stats = [...w.document.querySelectorAll("#stats .stat b")].map((el) => el.textContent);
-  assert.equal(stats[0], "-0.676", "threshold (mean logprob)");
-  assert.equal(stats[1], "23.6%", "auto-accept rate");
-  assert.equal(stats[3], "95.0%", "precision lower bound");
+  // derived from the fixture, not pinned: a re-capture changes the numbers but
+  // must not change the contract
+  const rows = w.eval("DEMO_CALIB_ROWS");
+  const fit = core.fitThreshold(rows.map(r => r[0]), rows.map(r => !!r[1]), 0.95, 0.05);
+  assert.ok(fit.feasible, "the real label set admits a 95% policy at all");
+  assert.equal(stats[0], fit.threshold.toFixed(3), "threshold shown = threshold fitted");
+  assert.equal(stats[3], (fit.precisionLowerBound * 100).toFixed(1) + "%");
+  assert.ok(fit.precisionLowerBound >= 0.95, "the guarantee actually holds on real data");
+  assert.ok(fit.autoAcceptRate > 0.5, "and it still auto-accepts most of the set");
 });
 
-test("app: routing decisions - confident vendor auto-accepted, shaky date reviewed", () => {
+test("app: the demo data is real and says so", () => {
+  const w = bootPage();
+  assert.equal(w.eval("DEMO_META.model"), "gpt-4o-mini");
+  assert.ok(w.eval("DEMO_CALIB_ROWS.length") > 400, "a real calibration set, not a seeded PRNG");
+  assert.ok(w.eval("DEMO_CALIB_ROWS.some(r => r[1] === 0)"), "and it contains real mistakes");
+  assert.match(w.document.getElementById("lensProv").textContent, /real .*gpt-4o-mini.* responses captured/);
+  assert.match(w.document.getElementById("calibProv").textContent, /476.*real extracted fields/);
+  // nothing synthetic left in the shipped app
+  assert.equal(w.eval("typeof mulberry32"), "undefined", "the seeded PRNG is gone");
+  assert.equal(w.eval("typeof demoCalib"), "undefined");
+});
+
+test("app: routing decisions - readable vendor auto-accepted, invented date reviewed", () => {
   const w = bootPage();
   const cls = (p) => w.document.querySelector(`.val[data-path="${p.replace(/"/g, '\\"')}"]`).className;
-  assert.ok(cls("$.vendor").includes("auto"), "$.vendor should be AUTO-ACCEPT");
-  assert.ok(cls("$.date").includes("review"), "$.date should be REVIEW");
+  // the sample receipt's date is destroyed (##/##/##), so the model's
+  // "2023-10-01" is invented - and the real logprobs catch it
+  assert.ok(cls("$.vendor").includes("auto"), "$.vendor is on the paper and was read");
+  assert.ok(cls("$.date").includes("review"), "$.date is not on the paper and was guessed");
   const pills = [...w.document.querySelectorAll("#tableWrap .pill")].map((el) => el.textContent);
   assert.ok(pills.includes("AUTO-ACCEPT") && pills.includes("REVIEW"));
+  assert.equal(pills.filter(p => p === "REVIEW").length, 1, "only the guessed field is routed");
 });
 
 test("app: target-precision slider refits threshold live", () => {
@@ -501,7 +528,7 @@ test("lens: structured results shown for the receipt sample, free text hidden", 
 test("lens: routing decisions cite the policy fitted in Workspace", () => {
   const w = bootPage();
   const note = w.document.getElementById("policyNote");
-  assert.match(note.textContent, /-0\.676/, "shows the active threshold");
+  assert.match(note.textContent, new RegExp(w.eval("state.fit.threshold").toFixed(3).replace(".", "\\.")), "shows the active threshold");
   assert.match(note.textContent, /95%/);
   assert.ok(note.querySelector('a[href="#workspace"]'), "links to where the policy is fitted");
 });
@@ -519,16 +546,36 @@ test("lens: prose sample auto-detects free text and renders a token heatmap", ()
 
   const tks = [...w.document.querySelectorAll("#heatmap .tkn")];
   assert.ok(tks.length > 30, "every token is rendered");
-  assert.equal(tks.map(t => t.textContent).join(""), "The Apollo 11 mission landed on the Moon on July 20, 1969." +
-    " The crew consisted of Neil Armstrong, Buzz Aldrin, and Michael Collins." +
-    " The mission lasted approximately 8 days.");
+  assert.match(tks.map(t => t.textContent).join(""), /Apollo 11.*landed on the Moon on July 20, 1969/);
+
   // banded by probability, with alpha carrying magnitude
   const armstrong = tks.find(t => t.textContent === " Armstrong");
   assert.ok(armstrong.classList.contains("hi"), "a near-certain token is in the confident band");
-  const eight = tks.find(t => t.textContent === "8");
-  assert.ok(eight.classList.contains("lo"), "a coin-flip token is in the uncertain band");
-  assert.ok(parseFloat(eight.style.getPropertyValue("--a")) >
+  const unsure = tks.find(t => t.classList.contains("lo"));
+  assert.ok(unsure, "the response contains genuinely contested tokens");
+  assert.ok(parseFloat(unsure.style.getPropertyValue("--a")) >
     parseFloat(armstrong.style.getPropertyValue("--a")), "less certain -> more opaque");
+});
+
+test("lens: on real data the model is certain about facts and unsure about wording", () => {
+  // This is the honesty banner's claim, and the captured response is the
+  // evidence for it: if this ever inverts, the banner is lying.
+  const w = bootPage();
+  toProse(w);
+  const tks = [...w.document.querySelectorAll("#heatmap .tkn")];
+  const band = t => tks.find(x => x.textContent === t).className;
+
+  for (const fact of [" July", "20", "196", " Armstrong"]) {
+    assert.ok(band(fact).includes("hi"), `${fact} is a fact the model knows cold`);
+  }
+  // ...and whatever the capture, the uncertainty that does exist is about how
+  // to say it, never about the facts themselves.
+  const shaky = tks.filter(t => t.classList.contains("lo") || t.classList.contains("mid"))
+    .map(t => t.textContent);
+  assert.ok(shaky.length, "there is real uncertainty to show");
+  for (const fact of [" July", "20", " Armstrong", " Moon"]) {
+    assert.ok(!shaky.includes(fact), `${fact} must not be flagged - it is not in doubt`);
+  }
 });
 
 test("lens: free-text mode makes no accept/review decision (PLAN_v2 2.3)", () => {
@@ -559,14 +606,14 @@ test("lens: honesty banner states the limit verbatim and is dismissible", () => 
 test("lens: token popover exposes the alternatives the model considered", () => {
   const w = bootPage();
   toProse(w);
-  const july = [...w.document.querySelectorAll("#heatmap .tkn")].find(t => t.textContent === " July");
-  july.dispatchEvent(new w.Event("mouseenter"));
+  const edwin = [...w.document.querySelectorAll("#heatmap .tkn")].find(t => t.textContent === " Edwin");
+  edwin.dispatchEvent(new w.Event("mouseenter"));
   const pop = w.document.getElementById("pop");
   assert.equal(pop.style.display, "block");
-  assert.match(pop.textContent, /" July"/, "chosen token");
-  assert.match(pop.textContent, /" June"/, "runner-up the model also considered");
+  assert.match(pop.textContent, /" Edwin"/, "chosen token");
+  assert.match(pop.textContent, /" Buzz"/, "the alternative it nearly picked instead");
   assert.equal(pop.querySelectorAll(".trow.chosen").length, 1);
-  july.dispatchEvent(new w.Event("mouseleave"));
+  edwin.dispatchEvent(new w.Event("mouseleave"));
   assert.equal(pop.style.display, "none");
 });
 
@@ -575,9 +622,9 @@ test("lens: least certain passages rank the shakiest sentence first", () => {
   toProse(w);
   const spans = [...w.document.querySelectorAll("#spansWrap .span")];
   assert.equal(spans.length, 3, "bottom 3 sentences");
-  assert.match(spans[0].querySelector(".spantext").textContent,
-    /The mission lasted approximately 8 days\./, "the 'approximately 8 days' sentence is least certain");
   assert.match(spans[0].querySelector(".spanstat").textContent, /geo \d+\.\d%/);
+  const geo = spans.map(s => parseFloat(s.querySelector(".spanstat").textContent.match(/geo ([\d.]+)%/)[1]));
+  assert.ok(geo[0] <= geo[1] && geo[1] <= geo[2], "ranked least certain first");
 });
 
 test("lens: manual mode toggle overrides auto-detection", () => {
@@ -602,15 +649,21 @@ test("workspace: dashboard is empty until a batch is loaded", () => {
   assert.equal(w.document.getElementById("pathCard").hidden, true);
 });
 
-test("workspace: demo batch loads and summarises against the policy", () => {
+test("workspace: the real batch loads and summarises against the policy", () => {
   const w = bootPage();
   loadDemoBatch(w);
   assert.equal(w.document.getElementById("batchEmpty").hidden, true);
   const stats = [...w.document.querySelectorAll("#batchStats .stat b")].map(e => e.textContent);
-  assert.equal(stats[0], "120", "responses");
-  assert.equal(stats[1], "480", "fields (4 per receipt)");
-  assert.match(stats[2], /^\d+\.\d%$/, "auto-accept rate on this batch");
-  assert.match(w.document.getElementById("batchNote").textContent, /120 responses parsed/);
+  const { docs, errors } = core.parseBatch(w.eval("DEMO_BATCH_JSONL"));
+  assert.equal(errors.length, 0, "every captured response parses");
+  assert.equal(stats[0], String(docs.length), "real captured responses");
+  const nFields = docs.reduce((n, d) => n + Object.keys(d.fields).length, 0);
+  assert.equal(stats[1], String(nFields));
+  assert.match(stats[2], /^\d+\.\d%$/);
+  assert.ok(parseFloat(stats[2]) > 80, "most of a real batch auto-accepts");
+  assert.match(stats[3], /^0 \/ \d+$/, "nothing reviewed yet");
+  assert.match(w.document.getElementById("batchNote").textContent,
+    new RegExp(`${docs.length} responses parsed`));
   // the batch rate is computed on the batch, not copied from the calibration set
   const calibRate = w.document.querySelectorAll("#stats .stat b")[1].textContent;
   assert.notEqual(stats[2], calibRate);
@@ -622,11 +675,12 @@ test("workspace: histogram renders bars and marks the threshold", () => {
   assert.equal(w.document.getElementById("histCard").hidden, false);
   const svg = w.document.querySelector("#hist svg");
   assert.ok(svg, "hand-rolled SVG, no chart library");
-  assert.ok(svg.querySelectorAll("rect").length >= 20, "one bar per bin");
-  assert.match(svg.textContent, /threshold/, "threshold line is labelled");
-  // bars are split into auto (teal) and review (red) by the threshold
   const fills = new Set([...svg.querySelectorAll("rect")].map(r => r.getAttribute("fill")));
-  assert.ok(fills.has("#0B7A66") && fills.has("#B23A2B"));
+  assert.ok(fills.has("#0B7A66") && fills.has("#B23A2B"),
+    "both sides of the policy are visible - a real batch is mostly auto-accept, " +
+    "and a chart that paints it all one colour contradicts the stat next to it");
+  assert.match(svg.textContent, /auto-accept/);
+  assert.match(svg.textContent, /review/);
 });
 
 test("workspace: weakest-field table surfaces $.date as the structural weak spot", () => {
@@ -634,10 +688,15 @@ test("workspace: weakest-field table surfaces $.date as the structural weak spot
   loadDemoBatch(w);
   assert.equal(w.document.getElementById("pathCard").hidden, false);
   const rows = [...w.document.querySelectorAll("#pathWrap tbody tr")];
-  assert.equal(rows.length, 4, "vendor / date / total / currency");
   assert.equal(rows[0].children[0].textContent, "$.date", "ranked weakest first");
-  assert.equal(rows[0].children[1].textContent, "120");
-  assert.equal(rows[rows.length - 1].children[0].textContent, "$.currency", "and strongest last");
+  assert.equal(rows[0].children[1].textContent, String(core.parseBatch(w.eval("DEMO_BATCH_JSONL")).docs.length),
+    "one date per receipt");
+  assert.ok(parseFloat(rows[0].children[4].textContent) > 0,
+    "$.date is the field these receipts force the model to guess");
+  // array indices collapse, so items aggregate rather than fragment
+  const paths = rows.map(r => r.children[0].textContent);
+  assert.ok(paths.includes("$.items[].name") && paths.includes("$.items[].qty"));
+  assert.equal(paths[paths.length - 1], "$.items[].name");
 });
 
 test("workspace: refitting the policy re-decides the loaded batch", () => {
@@ -690,6 +749,8 @@ function key(w, k, target) {
 }
 
 const rv = (w, sel) => w.document.querySelector("#reviewBody " + sel);
+// the queue length is whatever the real data produces - derive it, never pin it
+const QN = w => w.eval("state.review.items.length");
 const rvText = (w, sel) => (rv(w, sel) || {}).textContent;
 
 function bootWithBatch(opts) {
@@ -699,35 +760,63 @@ function bootWithBatch(opts) {
   return w;
 }
 
+// Volume for the tests that need it, built by replaying the real captured
+// batch under fresh ids rather than inventing logprobs.
+function bootWithBigBatch(opts, times) {
+  const w = bootPage(opts);
+  toWorkspace(w);
+  const base = w.eval("DEMO_BATCH_JSONL").split("\n");
+  const lines = [];
+  for (let t = 0; t < times; t++) {
+    for (const line of base) {
+      const o = JSON.parse(line);
+      o.id = `${o.id}-r${t}`;
+      lines.push(JSON.stringify(o));
+    }
+  }
+  w.document.getElementById("tabBatchPaste").dispatchEvent(new w.Event("click", { bubbles: true }));
+  w.document.getElementById("batchIn").value = lines.join("\n");
+  w.document.getElementById("loadBatch").dispatchEvent(new w.Event("click", { bubbles: true }));
+  return w;
+}
+
 test("review: queue holds only below-threshold fields, riskiest first", () => {
   const w = bootWithBatch();
   assert.equal(w.document.getElementById("reviewCard").hidden, false);
   // 85 of 480 fields fall below the fitted threshold
-  assert.match(rvText(w, ".rvprog"), /^0 \/ 85 reviewed$/);
-  assert.equal(rvText(w, ".rvpath"), "$.date", "the weakest field surfaces first");
+  assert.match(rvText(w, ".rvprog"), new RegExp(`^0 \\/ ${QN(w)} reviewed$`));
+  const scores = w.eval("state.review.items.map(i => i.score)");
+  assert.deepEqual(scores, scores.slice().sort((a, b) => a - b), "riskiest first");
   const conf = rvText(w, ".rvconf");
   assert.match(conf, /geo \d+\.\d%/);
-  assert.ok(rv(w, ".rvvalue").textContent.startsWith("2024-"), "shows the extracted value");
+  assert.equal(rv(w, ".rvvalue").textContent,
+    String(w.eval("state.review.items[0].value")), "shows the extracted value");
 });
 
 test("review: 'a' approves the current field and advances to the next", () => {
   const w = bootWithBatch();
-  const first = rvText(w, ".rvvalue");
+  const firstDoc = rvText(w, ".rvdoc");
   key(w, "a");
-  assert.match(rvText(w, ".rvprog"), /^1 \/ 85 reviewed$/);
-  assert.notEqual(rvText(w, ".rvvalue"), first, "moved on");
-  assert.match(w.document.querySelector(".rvfill").style.width, /^1\.[0-9]%$/);
+  assert.match(rvText(w, ".rvprog"), new RegExp(`^1 \\/ ${QN(w)} reviewed$`));
+  // every destroyed receipt gets the same guessed date, so the value alone
+  // cannot tell us we advanced - the document can
+  assert.notEqual(rvText(w, ".rvdoc"), firstDoc, "moved on to the next field");
+  assert.match(rvText(w, ".rvpos"), new RegExp(`^2 of ${QN(w)} in queue`));
+  // jsdom normalises "3.0%" to "3%", so compare the number
+  assert.ok(Math.abs(parseFloat(w.document.querySelector(".rvfill").style.width) - 100 / QN(w)) < 0.1,
+    "the progress bar tracks the queue");
 });
 
 test("review: 'e' edits inline and Enter records a correction", () => {
   const w = bootWithBatch();
+  w.eval('state.review.idx = state.review.items.findIndex(i => i.kind === "string"); renderReview();');
   const path = rvText(w, ".rvpath");
   key(w, "e");
   const input = w.document.getElementById("rvEdit");
   assert.ok(input, "inline editor opened");
   input.value = "2024-02-28";
   key(w, "Enter", input);
-  assert.match(rvText(w, ".rvprog"), /^1 \/ 85 reviewed$/);
+  assert.match(rvText(w, ".rvprog"), new RegExp(`^1 \\/ ${QN(w)} reviewed$`));
   // the correction is an implicit "this was wrong" label
   const csv = w.eval("toLabelCsv(state.review.items, state.review.decisions)");
   assert.match(csv.split("\n")[1], new RegExp(`,\\${path},.*,0$`));
@@ -743,7 +832,7 @@ test("review: an edit that is not valid JSON for a non-string field is rejected"
   input.value = "not a number";
   key(w, "Enter", input);
   assert.equal(w.document.getElementById("rvEditErr").style.display, "block");
-  assert.match(rvText(w, ".rvprog"), /^0 \/ 85 reviewed$/, "nothing recorded");
+  assert.match(rvText(w, ".rvprog"), new RegExp(`^0 \\/ ${QN(w)} reviewed$`), "nothing recorded");
   // a real number is accepted and stays a number
   input.value = "18.4";
   key(w, "Enter", input);
@@ -752,14 +841,14 @@ test("review: an edit that is not valid JSON for a non-string field is rejected"
 
 test("review: j/k move through the queue without deciding", () => {
   const w = bootWithBatch();
-  assert.match(rvText(w, ".rvpos"), /^1 of 85 in queue/);
+  assert.match(rvText(w, ".rvpos"), new RegExp(`^1 of ${QN(w)} in queue`));
   key(w, "j"); key(w, "j");
-  assert.match(rvText(w, ".rvpos"), /^3 of 85 in queue/);
+  assert.match(rvText(w, ".rvpos"), new RegExp(`^3 of ${QN(w)} in queue`));
   key(w, "k");
-  assert.match(rvText(w, ".rvpos"), /^2 of 85 in queue/);
-  assert.match(rvText(w, ".rvprog"), /^0 \/ 85 reviewed$/, "moving is not deciding");
+  assert.match(rvText(w, ".rvpos"), new RegExp(`^2 of ${QN(w)} in queue`));
+  assert.match(rvText(w, ".rvprog"), new RegExp(`^0 \\/ ${QN(w)} reviewed$`), "moving is not deciding");
   key(w, "k"); key(w, "k");
-  assert.match(rvText(w, ".rvpos"), /^1 of 85 in queue/, "clamped at the top");
+  assert.match(rvText(w, ".rvpos"), new RegExp(`^1 of ${QN(w)} in queue`), "clamped at the top");
 });
 
 test("review: 'u' undoes the last decision", () => {
@@ -767,37 +856,41 @@ test("review: 'u' undoes the last decision", () => {
   const first = rvText(w, ".rvvalue");
   key(w, "a");
   key(w, "a");
-  assert.match(rvText(w, ".rvprog"), /^2 \/ 85 reviewed$/);
+  assert.match(rvText(w, ".rvprog"), new RegExp(`^2 \\/ ${QN(w)} reviewed$`));
   key(w, "u");
-  assert.match(rvText(w, ".rvprog"), /^1 \/ 85 reviewed$/);
+  assert.match(rvText(w, ".rvprog"), new RegExp(`^1 \\/ ${QN(w)} reviewed$`));
   key(w, "u");
-  assert.match(rvText(w, ".rvprog"), /^0 \/ 85 reviewed$/);
+  assert.match(rvText(w, ".rvprog"), new RegExp(`^0 \\/ ${QN(w)} reviewed$`));
   assert.equal(rvText(w, ".rvvalue"), first, "cursor returns to the undone item");
   key(w, "u");   // empty history
-  assert.match(rvText(w, ".rvprog"), /^0 \/ 85 reviewed$/);
+  assert.match(rvText(w, ".rvprog"), new RegExp(`^0 \\/ ${QN(w)} reviewed$`));
 });
 
 test("review: shortcuts stay out of the way while typing", () => {
   const w = bootWithBatch();
   const ta = w.document.getElementById("batchIn");
   key(w, "a", ta);
-  assert.match(rvText(w, ".rvprog"), /^0 \/ 85 reviewed$/, "'a' in a textarea is just text");
+  assert.match(rvText(w, ".rvprog"), new RegExp(`^0 \\/ ${QN(w)} reviewed$`), "'a' in a textarea is just text");
   // and they are scoped to Workspace
   w.location.hash = "#lens";
   w.dispatchEvent(new w.Event("hashchange"));
   key(w, "a");
-  assert.match(rvText(w, ".rvprog"), /^0 \/ 85 reviewed$/);
+  assert.match(rvText(w, ".rvprog"), new RegExp(`^0 \\/ ${QN(w)} reviewed$`));
 });
 
 test("review: clearing the queue reports what was reviewed vs auto-accepted", () => {
   const w = bootWithBatch();
   w.eval("state.review.items.forEach(i => state.review.decisions[i.key] = {action:'approve'}); renderReview();");
   const done = rvText(w, ".rvdone");
+  const n = QN(w);
+  const total = core.parseBatch(w.eval("DEMO_BATCH_JSONL")).docs
+    .reduce((a, d) => a + Object.keys(d.fields).length, 0);
   assert.match(done, /Queue cleared/);
   // PLAN_v2 3.3: "reviewed 118 of 2,340 fields (5.0%), the rest auto-accepted"
-  assert.match(done, /You reviewed\s*85\s*of 480 fields \(17\.7%\)/);
-  assert.match(done, /The other 395 auto-accepted with precision guaranteed at\s*≥\s*95%/);
-  assert.match(done, /85 approved · 0 corrected/);
+  assert.match(done, new RegExp(`You reviewed\\s*${n}\\s*of ${total} fields`));
+  assert.match(done, new RegExp(`The other ${total - n} auto-accepted with precision guaranteed at\\s*≥\\s*95%`));
+  assert.match(done, new RegExp(`${n} approved · 0 corrected`));
+  assert.ok(n / total < 0.15, "a real batch needs a human on a small minority of fields");
 });
 
 test("review: the done screen refits the threshold from the review labels (flywheel)", () => {
@@ -806,6 +899,7 @@ test("review: the done screen refits the threshold from the review labels (flywh
   w.eval(`state.review.items.forEach((i, n) => state.review.decisions[i.key] =
     n % 4 === 0 ? {action:'edit', value:'x'} : {action:'approve'}); renderReview();`);
   const before = w.document.querySelector("#stats .stat b").textContent;
+  const nCalib = w.eval("state.fit.nCalib"), n = QN(w);
 
   w.document.getElementById("rvRefit").dispatchEvent(new w.Event("click", { bubbles: true }));
 
@@ -814,14 +908,22 @@ test("review: the done screen refits the threshold from the review labels (flywh
   assert.ok(w.document.getElementById("tabCsv").classList.contains("on"), "switched to the CSV source");
   assert.equal(w.document.getElementById("csvErr").style.display, "none",
     "the exported 4-column CSV is accepted as-is");
-  assert.notEqual(w.document.querySelector("#stats .stat b").textContent, before,
-    "the policy was refitted from the review labels");
-  assert.equal(w.eval("state.fit.nCalib"), 85);
+  assert.ok(w.eval("state.fit.feasible"), "the refit still yields a usable policy");
+  assert.equal(w.eval("state.fit.nCalib"), nCalib + n, "review labels were pooled, not substituted");
+  // Refitting on the queue alone would be selection bias: it only ever holds
+  // below-threshold fields, so on its own it fits "review everything". Pooled,
+  // it cannot move a threshold that sits above every label it contains - which
+  // is exactly why the threshold is expected to hold here.
+  assert.equal(w.document.querySelector("#stats .stat b").textContent, before,
+    "tail labels sharpen the boundary; they do not move a threshold above them");
+  assert.match(w.document.getElementById("calibProv").textContent,
+    new RegExp(`plus\\s*${n}\\s*labels from this review`));
 });
 
 test("export: the three files are built from what is loaded", () => {
   const w = bootWithBatch();
   w.eval("download = (name, text, mime) => { window.__dl = {name, text, mime}; };");
+  w.eval('state.review.idx = state.review.items.findIndex(i => i.kind === "string"); renderReview();');
   key(w, "e");
   const input = w.document.getElementById("rvEdit");
   input.value = "2024-02-28";
@@ -831,8 +933,8 @@ test("export: the three files are built from what is loaded", () => {
   let dl = w.__dl;
   assert.equal(dl.name, "fieldtrust-corrected.jsonl");
   const rows = dl.text.trim().split("\n").map(JSON.parse);
-  assert.equal(rows.length, 120);
-  assert.ok(rows.some(r => r.data.date === "2024-02-28"), "the correction is in the file");
+  assert.equal(rows.length, core.parseBatch(w.eval("DEMO_BATCH_JSONL")).docs.length);
+  assert.ok(rows.some(r => JSON.stringify(r.data).includes("2024-02-28")), "the correction is in the file");
   assert.ok(rows[0]._fieldtrust, "metadata attached when the box is checked");
 
   w.document.getElementById("exportMeta").checked = false;
@@ -846,7 +948,8 @@ test("export: the three files are built from what is loaded", () => {
   w.document.getElementById("expPolicy").dispatchEvent(new w.Event("click", { bubbles: true }));
   assert.equal(w.__dl.name, "fieldtrust-policy.json");
   const policy = JSON.parse(w.__dl.text);
-  assert.ok(Math.abs(policy.threshold - (-0.676)) < 5e-4);
+  assert.ok(Math.abs(policy.threshold - w.eval("state.fit.threshold")) < 1e-6,
+    "the exported policy is the one the app is actually using");
   assert.equal(policy.targetPrecision, 0.95);
   assert.ok(policy.fittedAt, "stamped when the policy was fitted");
 });
@@ -854,29 +957,35 @@ test("export: the three files are built from what is loaded", () => {
 test("review: a refit re-cuts the queue but keeps decisions on fields still in it", () => {
   const w = bootWithBatch();
   key(w, "a");                       // approves the riskiest field
-  assert.match(rvText(w, ".rvprog"), /^1 \/ 85 reviewed$/);
+  assert.match(rvText(w, ".rvprog"), new RegExp(`^1 \\/ ${QN(w)} reviewed$`));
+  const before = QN(w);
   const slider = w.document.getElementById("target");
-  slider.value = "0.90";             // looser target -> threshold -1.470 -> 8 left
+  slider.value = "0.90";             // a looser target cuts a smaller queue
   slider.dispatchEvent(new w.Event("input", { bubbles: true }));
-  assert.match(rvText(w, ".rvprog"), /^1 \/ 8 reviewed$/,
-    "queue re-cut, and the riskiest field is still in it and still approved");
+  assert.ok(QN(w) < before, "the queue was re-cut from the new policy");
+  assert.match(rvText(w, ".rvprog"), new RegExp(`^1 \\/ ${QN(w)} reviewed$`),
+    "the riskiest field is still in it, and still approved");
 });
 
-test("review: a policy loose enough to accept the whole batch empties the queue", () => {
+test("review: a looser target shrinks the queue and auto-accepts more", () => {
   const w = bootWithBatch();
+  const queued = QN(w);
+  const auto = () => parseFloat(w.document.querySelectorAll("#batchStats .stat b")[2].textContent);
+  const before = auto();
   const slider = w.document.getElementById("target");
-  slider.value = "0.80";             // threshold -1.757: nothing in this batch is below it
+  slider.value = "0.85";
   slider.dispatchEvent(new w.Event("input", { bubbles: true }));
-  assert.equal(w.eval("state.review.items.length"), 0);
-  assert.match(rvText(w, ".empty"), /every field in this batch cleared the threshold/);
-  assert.equal(w.document.querySelectorAll("#batchStats .stat b")[2].textContent, "100.0%");
+  assert.ok(QN(w) < queued, "a weaker guarantee sends less to a human");
+  assert.ok(auto() > before);
+  // ...which is the trade the product exists to make legible
+  assert.ok(w.eval("state.fit.threshold") < -0.021);
 });
 
 test("review: with storage unavailable the queue still works, just without resume", () => {
   const w = bootWithBatch();          // no idb injected
   assert.equal(w.document.getElementById("resumeBar").hidden, true);
   key(w, "a");
-  assert.match(rvText(w, ".rvprog"), /^1 \/ 85 reviewed$/, "review is not blocked by storage");
+  assert.match(rvText(w, ".rvprog"), new RegExp(`^1 \\/ ${QN(w)} reviewed$`), "review is not blocked by storage");
 });
 
 test("review: progress survives a reload and can be resumed (D-004)", async () => {
@@ -887,7 +996,7 @@ test("review: progress survives a reload and can be resumed (D-004)", async () =
   key(w1, "a");
   key(w1, "a");
   key(w1, "a");
-  assert.match(rvText(w1, ".rvprog"), /^3 \/ 85 reviewed$/);
+  assert.match(rvText(w1, ".rvprog"), new RegExp(`^3 \\/ ${QN(w1)} reviewed$`));
   await waitFor(() => w1.eval("state.review.decisions") && true, "decisions recorded");
   await sleep(80);                       // let the IndexedDB write land
 
@@ -896,12 +1005,12 @@ test("review: progress survives a reload and can be resumed (D-004)", async () =
   const bar = w2.document.getElementById("resumeBar");
   await waitFor(() => !bar.hidden, "resume bar to appear");
   assert.match(bar.textContent, /You reviewed 3 field\(s\) in this batch/);
-  assert.match(rvText(w2, ".rvprog"), /^0 \/ 85 reviewed$/, "not resumed until asked");
+  assert.match(rvText(w2, ".rvprog"), new RegExp(`^0 \\/ ${QN(w2)} reviewed$`), "not resumed until asked");
 
   w2.document.getElementById("resumeYes").dispatchEvent(new w2.Event("click", { bubbles: true }));
-  assert.match(rvText(w2, ".rvprog"), /^3 \/ 85 reviewed$/, "picked up where it left off");
+  assert.match(rvText(w2, ".rvprog"), new RegExp(`^3 \\/ ${QN(w2)} reviewed$`), "picked up where it left off");
   assert.equal(bar.hidden, true);
-  assert.match(w2.document.querySelectorAll("#batchStats .stat b")[3].textContent, /^3 \/ 85$/);
+  assert.match(w2.document.querySelectorAll("#batchStats .stat b")[3].textContent, new RegExp(`^3 \\/ ${QN(w2)}$`));
 });
 
 test("review: 'start over' drops the saved session (D-004)", async () => {
@@ -916,7 +1025,7 @@ test("review: 'start over' drops the saved session (D-004)", async () => {
   await waitFor(() => !w2.document.getElementById("resumeBar").hidden, "resume bar");
   w2.document.getElementById("resumeNo").dispatchEvent(new w2.Event("click", { bubbles: true }));
   await sleep(80);
-  assert.match(rvText(w2, ".rvprog"), /^0 \/ 85 reviewed$/);
+  assert.match(rvText(w2, ".rvprog"), new RegExp(`^0 \\/ ${QN(w2)} reviewed$`));
 
   const w3 = bootWithBatch({ idb });
   await sleep(120);
@@ -929,9 +1038,12 @@ test("acceptance: upload -> review -> export -> refit runs end to end (PLAN_v2 5
 
   // upload
   const w1 = bootWithBatch({ idb });
-  assert.equal(w1.eval("state.batch.docs.length"), 120);
+  assert.equal(w1.eval("state.batch.docs.length"),
+    core.parseBatch(w1.eval("DEMO_BATCH_JSONL")).docs.length);
   // review a few, then reload mid-way
-  key(w1, "a"); key(w1, "e");
+  key(w1, "a");
+  w1.eval('state.review.idx = state.review.items.findIndex(i => i.kind === "string"); renderReview();');
+  key(w1, "e");
   const input = w1.document.getElementById("rvEdit");
   input.value = "2024-02-28";
   key(w1, "Enter", input);
@@ -940,7 +1052,7 @@ test("acceptance: upload -> review -> export -> refit runs end to end (PLAN_v2 5
   const w = bootWithBatch({ idb });
   await waitFor(() => !w.document.getElementById("resumeBar").hidden, "resume offered");
   w.document.getElementById("resumeYes").dispatchEvent(new w.Event("click", { bubbles: true }));
-  assert.match(rvText(w, ".rvprog"), /^2 \/ 85 reviewed$/, "review survived the reload");
+  assert.match(rvText(w, ".rvprog"), new RegExp(`^2 \\/ ${QN(w)} reviewed$`), "review survived the reload");
 
   // finish the queue
   w.eval(`state.review.items.forEach(i => { if (!state.review.decisions[i.key])
@@ -950,12 +1062,12 @@ test("acceptance: upload -> review -> export -> refit runs end to end (PLAN_v2 5
   // export
   w.eval("download = (name, text) => { window.__dl = {name, text}; };");
   w.document.getElementById("expLabels").dispatchEvent(new w.Event("click", { bubbles: true }));
-  assert.equal(w.__dl.text.trim().split("\n").length, 86, "header + 85 labels");
+  assert.equal(w.__dl.text.trim().split("\n").length, QN(w) + 1, "header + one row per decision");
 
   // refit from those labels, in one click
   w.document.getElementById("rvRefit").dispatchEvent(new w.Event("click", { bubbles: true }));
   assert.equal(w.document.getElementById("csvErr").style.display, "none");
-  assert.equal(w.eval("state.fit.nCalib"), 85);
+  assert.ok(w.eval("state.fit.feasible"), "and the pooled refit still yields a usable policy");
 });
 
 test("export: the panel note tracks review decisions as they happen", () => {
@@ -974,17 +1086,17 @@ test("review: a burst of decisions all persists to the last snapshot", async () 
   const FDBFactory = require("fake-indexeddb/lib/FDBFactory");
   const idb = new FDBFactory();
 
-  const w1 = bootWithBatch({ idb });
+  const w1 = bootWithBigBatch({ idb }, 8);
   for (let i = 0; i < 40; i++) key(w1, "a");
-  assert.match(rvText(w1, ".rvprog"), /^40 \/ 85 reviewed$/);
+  assert.match(rvText(w1, ".rvprog"), new RegExp(`^40 \\/ ${QN(w1)} reviewed$`));
   await w1.eval("flushSessions()");
 
-  const w2 = bootWithBatch({ idb });
+  const w2 = bootWithBigBatch({ idb }, 8);
   await waitFor(() => !w2.document.getElementById("resumeBar").hidden, "resume bar");
   assert.match(w2.document.getElementById("resumeBar").textContent,
     /You reviewed 40 field\(s\)/, "every decision in the burst survived");
   w2.document.getElementById("resumeYes").dispatchEvent(new w2.Event("click", { bubbles: true }));
-  assert.match(rvText(w2, ".rvprog"), /^40 \/ 85 reviewed$/);
+  assert.match(rvText(w2, ".rvprog"), new RegExp(`^40 \\/ ${QN(w2)} reviewed$`));
 });
 
 test("store: a burst reuses one connection and coalesces its writes", async () => {
@@ -1017,7 +1129,7 @@ test("store: a burst reuses one connection and coalesces its writes", async () =
     return req;
   };
 
-  const w = bootWithBatch({ idb });
+  const w = bootWithBigBatch({ idb }, 8);
   for (let i = 0; i < 40; i++) key(w, "a");
   await w.eval("flushSessions()");
 

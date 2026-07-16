@@ -7,6 +7,8 @@ Per-field confidence, calibrated thresholds, and statistically guaranteed auto-a
 
 **Live app:** https://5seoyoung.github.io/fieldtrust/ - nothing you paste ever leaves the page.
 
+Every number the demo shows is real: the samples are actual `gpt-4o-mini` responses and the policy is fitted on 476 real extracted fields labelled against known ground truth. Nothing on the page is invented ([how](docs/DEMO_DATA.md)).
+
 ---
 
 When you extract structured data (receipts, contracts, reports) with an LLM at scale, some outputs are silently wrong - and you don't know which. So teams either review everything (defeating automation), review nothing (feeding errors downstream), or eyeball raw logprob averages that can't answer *"is 0.7 good enough?"*.
@@ -103,6 +105,14 @@ python python/examples/demo.py
 The web app ships as a single dependency-free `index.html`, assembled from `src/` by `npm run build` (a 20-line string-substitution script - no bundler). Edit `src/`, never `index.html` directly; `npm test` rebuilds before running, and CI fails if the committed `index.html` drifts from `src/`.
 
 The Python package is the algorithmic reference. Core algorithm changes must keep both test suites green (see [docs/DECISIONS.md](docs/DECISIONS.md)).
+
+## What the real data says
+
+Measured on captured `gpt-4o-mini` responses, not assumed ([docs/DEMO_DATA.md](docs/DEMO_DATA.md)):
+
+- **It works where it should.** On receipts with a destroyed date, the score separates invented values from read ones perfectly (AUROC 1.00). That is an easy contrast on receipts we authored - a smoke test, not a benchmark.
+- **Calibration is not decoration.** Real scores live in `[-0.83, 0]`; a threshold guessed from a plausible-looking synthetic distribution was off by 20x and would have auto-accepted every hallucinated field.
+- **It measures whether the model was sure, not whether it was right.** It catches the model guessing at a field that is not there. It does not catch faithful transcription of OCR garbage, or a confident wrong reading of an ambiguous date - there is no hesitation to detect in either.
 
 ## Roadmap
 

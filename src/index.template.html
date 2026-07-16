@@ -36,6 +36,7 @@
       <button class="tab" id="tabProse">Sample prose</button>
       <button class="tab" id="tabPaste">Paste response</button>
     </div>
+    <div class="prov" id="lensProv"></div>
     <textarea id="respIn" spellcheck="false" aria-label="Response JSON"></textarea>
     <div class="modebar">
       <span class="modelabel">Mode</span>
@@ -102,7 +103,7 @@
     <h2>Upload responses</h2>
     <p class="sub">One JSON per line (JSONL): either a bare OpenAI response, or <code>{"id": "doc-1", "response": {...}}</code>. Bad lines are skipped and counted.</p>
     <div class="tabs">
-      <button class="tab on" id="tabBatchDemo">Demo batch (n=120)</button>
+      <button class="tab on" id="tabBatchDemo">Real batch (n=20)</button>
       <button class="tab" id="tabBatchPaste">Paste / upload</button>
     </div>
     <div id="batchInputs" hidden>
@@ -119,9 +120,10 @@
     <h2>Review policy</h2>
     <p class="sub">Fit a threshold on labeled history - pairs of <code>score,correct</code> - so every auto-accepted field meets your precision target with statistical confidence.</p>
     <div class="tabs">
-      <button class="tab on" id="tabSynth">Demo set (n=500)</button>
+      <button class="tab on" id="tabSynth">Real labels (n=476)</button>
       <button class="tab" id="tabCsv">Paste CSV</button>
     </div>
+    <div class="prov" id="calibProv"></div>
     <textarea id="csvIn" spellcheck="false" style="display:none;min-height:110px" placeholder="-0.12,1&#10;-1.40,0&#10;-0.03,1&#10;...  (score,correct)"></textarea>
     <div class="ctl"><label for="target">Target precision</label><input type="range" id="target" min="0.80" max="0.99" step="0.01" value="0.95"><output id="targetOut">95%</output></div>
     <div class="ctl"><label for="delta">Confidence 1-delta</label>
@@ -170,7 +172,7 @@
 
   <div class="card" id="histCard" hidden>
     <div class="eyebrow">Dashboard · Confidence distribution</div>
-    <p class="sub">Every field in the batch by mean token logprob. The line is your current threshold: everything left of it goes to review.</p>
+    <p class="sub">Every field in the batch, bucketed by confidence. Most of a real batch sits at 100% - the buckets to the left are where the model hesitated, and where your threshold decides. A bucket the threshold cuts through shows both colours.</p>
     <div id="hist"></div>
   </div>
 
@@ -197,8 +199,17 @@
     <p>The threshold is chosen so that the one-sided <strong>Wilson lower confidence bound</strong> on auto-accept precision meets your target. "Precision was 98% on the calibration set" is an observation; "precision is at least 95% with 95% confidence" is a guarantee. The cost is coverage: raise the target and the auto-accept rate falls. That trade is the whole product.</p>
     <h3>Privacy</h3>
     <p>Everything runs client-side in this single HTML file. Nothing you paste or upload leaves your browser - there is no server to send it to.</p>
-    <h3>Limits</h3>
-    <p>Token probabilities are a good but imperfect error signal, and they are strongest under schema-constrained decoding. Providers that do not expose logprobs are not supported yet (a self-consistency fallback is on the roadmap). The guarantee holds for data drawn from the same distribution as your calibration set.</p>
+    <h3>Where the demo numbers come from</h3>
+    <p>All of them are real. The samples are actual <b id="aboutModel">gpt-4o-mini</b> responses, and the calibration set is <b id="aboutN">476</b> real extracted fields labelled against ground truth. We wrote the receipts and chose which characters to destroy, so we know what the answer was; a field that is not on the paper cannot be read, so whatever the model returns for it is a guess and the label is 0. Nothing on this page is a number we made up. Re-capture it yourself with <code>scripts/capture-demo.js</code>.</p>
+    <h3>Limits, measured rather than assumed</h3>
+    <p>On this data the score separates invented fields from read ones perfectly (AUROC 1.00), but that is an easy contrast on receipts we authored - treat it as a smoke test, not a benchmark. A real one on public receipts is the next step.</p>
+    <p>Three failure modes showed up in the real responses, and confidence catches only the first:</p>
+    <ul class="limits">
+      <li><b>Caught:</b> the field is missing or illegible, so the model guesses. Confidence drops and it routes to review.</li>
+      <li><b>Missed:</b> the source is legible but wrong (OCR noise), and the model transcribes the garbage faithfully - at ~100% confidence, because it really is what the page says.</li>
+      <li><b>Missed:</b> the source is ambiguous (<code>03/04/05</code>) and the model confidently applies one convention. No hesitation to detect.</li>
+    </ul>
+    <p>So this measures whether the model was <em>sure</em>, which is not the same as whether it was <em>right</em>. It is a strong signal for the first failure mode and silent on the other two. Providers that do not expose logprobs are not supported yet (a self-consistency fallback is on the roadmap), and the guarantee holds only for data drawn like your calibration set.</p>
     <p class="aboutlinks"><a href="https://github.com/5seoyoung/fieldtrust">Source on GitHub</a> · MIT licensed</p>
   </div>
 </section>
@@ -215,8 +226,8 @@
 <script id="fieldtrust-core">
 // INJECT:core.js
 </script>
-<script id="fieldtrust-demo">
-// INJECT:demo.js
+<script id="fieldtrust-fixtures">
+// INJECT:fixtures.js
 </script>
 <script id="fieldtrust-shared">
 // INJECT:shared.js

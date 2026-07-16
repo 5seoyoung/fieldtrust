@@ -80,14 +80,31 @@ $("target").addEventListener("input", () => {
 });
 $("delta").addEventListener("change", refit);
 
+// ---------- provenance ----------
+// A tool about trusting numbers has to say where its own numbers came from.
+function renderProvenance() {
+  const m = DEMO_META;
+  $("lensProv").innerHTML = `Samples are real <b>${esc(m.model)}</b> responses captured ${esc(m.capturedAt)} ` +
+    `- every probability shown came from the model. <a href="#about">How they were made</a>`;
+  $("calibProv").innerHTML = `<b>${nfmt(m.nCalib)}</b> real extracted fields, labelled against ground truth ` +
+    `we control: receipts with characters destroyed cannot be read, so anything the model returns for them is a guess.`;
+  $("aboutModel").textContent = m.model;
+  $("aboutN").textContent = nfmt(m.nCalib);
+}
+
 // ---------- global ----------
 window.addEventListener("hashchange", route);
 document.addEventListener("click", hidePop);
 $("yr").textContent = new Date().getFullYear();
 
 // ---------- boot ----------
-state.calib = demoCalib();
+// the calibration set is real: model scores against ground truth we control
+state.calib = {
+  scores: DEMO_CALIB_ROWS.map(r => r[0]),
+  correct: DEMO_CALIB_ROWS.map(r => !!r[1]),
+};
 state.modeChoice = "auto";
+renderProvenance();
 route();
 refit();                                            // fit the demo policy first
 $("respIn").value = JSON.stringify(DEMO_RESPONSE, null, 1);
