@@ -859,7 +859,7 @@ function setByPath(obj, path, value) {
 // ---------- review queue ----------
 // Only what the policy sends to review, riskiest first. With no feasible
 // policy every field is queued - same safe default as decide().
-const itemKey = (docId, path) => docId + " " + path;
+const itemKey = (docId, path) => docId + "\u0000" + path;
 
 function reviewQueue(docs, threshold) {
   const items = [];
