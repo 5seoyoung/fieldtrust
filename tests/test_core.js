@@ -30,7 +30,8 @@ function loadCore() {
       "\nreturn { extractValueSpans, scoreFields, tokensFromOpenAI, wilsonLowerBound, fitThreshold," +
       " detectMode, segmentSentences, scoreSentences, parseBatch, normalizePath, aggregateByPath," +
       " confidenceBuckets, batchSummary, pathSegments, getByPath, setByPath, reviewQueue, itemKey," +
-      " toLabelCsv, parseLabelCsv, toCorrectedJsonl, toPolicyJson, hashText };"
+      " toLabelCsv, parseLabelCsv, toCorrectedJsonl, toPolicyJson, hashText," +
+      " sampleU, calibRows, auditPrecision, AUDIT_RATE };"
   );
   return factory();
 }
@@ -284,19 +285,77 @@ test("core: pathSegments / getByPath / setByPath round-trip json_spans paths", (
   assert.equal(obj.date, "2024-02-29");
 });
 
-test("core: reviewQueue holds only below-threshold fields, riskiest first", () => {
+test("core: reviewQueue holds every below-threshold field, riskiest first", () => {
   const { docs } = core.parseBatch(batchJSONL());
-  const q = core.reviewQueue(docs, -0.676);
+  // auditRate 0 isolates the correction queue from the audit sample
+  const q = core.reviewQueue(docs, -0.676, 0);
   assert.deepEqual(q.map(i => i.docId), ["d1", "d2"], "d3's date cleared the threshold");
+  assert.ok(q.every(i => !i.isAudit), "no audit items when auditRate is 0");
   assert.ok(q[0].score < q[1].score, "worst score first");
   assert.equal(q[0].path, "$.date");
   assert.equal(q[0].value, "2024-02-31", "carries the extracted value for editing");
   assert.ok(q[0].tokens.length, "carries tokens for the popover");
 });
 
+test("core: the audit sample is uniform and decision-blind (D-007)", () => {
+  // A batch where the threshold cleanly separates a strong field from a weak
+  // one, so we can check the audit pulls from the AUTO-ACCEPT side too.
+  const doc = (id, weakLp) => JSON.stringify({ id, response: { choices: [{ logprobs: { content: [
+    { token: '{"strong": "', logprob: -0.001 },
+    { token: "A", logprob: -0.001 },              // always well above threshold
+    { token: '", "weak": "', logprob: -0.001 },
+    { token: "B", logprob: weakLp },              // below threshold
+    { token: '"}', logprob: -0.001 },
+  ] } }] } });
+  const many = [];
+  for (let i = 0; i < 200; i++) many.push(doc(`d${i}`, -2));
+  const { docs } = core.parseBatch(many.join("\n"));
+
+  const half = core.reviewQueue(docs, -0.676, 0.5);   // sample half of everything
+  const audits = half.filter(i => i.isAudit);
+  const calib = half.filter(i => i.inCalib);
+  // audits come only from the auto-accept side ($.strong), never corrections
+  assert.ok(audits.length > 0, "the sample reaches into the auto-accept region");
+  assert.ok(audits.every(i => i.path === "$.strong"), "audits are auto-accepted fields");
+  // the calibration sample spans BOTH sides - that is what makes it unbiased
+  const calibPaths = new Set(calib.map(i => i.path));
+  assert.ok(calibPaths.has("$.strong") && calibPaths.has("$.weak"),
+    "uniform sample covers strong and weak fields alike");
+  // ~50% of each field is sampled, within sampling noise
+  const strongTotal = docs.length, strongSampled = calib.filter(i => i.path === "$.strong").length;
+  assert.ok(Math.abs(strongSampled / strongTotal - 0.5) < 0.12, "roughly the target rate");
+});
+
+test("core: reviewQueue is deterministic - same batch, same sample", () => {
+  const { docs } = core.parseBatch(batchJSONL());
+  const a = core.reviewQueue(docs, -0.676, 0.3).map(i => i.key + (i.isAudit ? "A" : "C"));
+  const b = core.reviewQueue(docs, -0.676, 0.3).map(i => i.key + (i.isAudit ? "A" : "C"));
+  assert.deepEqual(a, b, "a reload must not re-roll the sample");
+});
+
+test("core: calibRows keeps only the uniform sample; auditPrecision only audits", () => {
+  const { docs } = core.parseBatch(batchJSONL());
+  const q = core.reviewQueue(docs, -0.676, 1);   // sample everything, so all inCalib
+  const decisions = {};
+  q.forEach((it, i) => { decisions[it.key] = { action: i % 2 ? "approve" : "edit", value: "x" }; });
+
+  const rows = core.calibRows(q, decisions);
+  assert.equal(rows.length, q.filter(i => i.inCalib).length);
+  assert.ok(rows.every(r => typeof r.score === "number" && typeof r.correct === "boolean"));
+
+  const audit = core.auditPrecision(q, decisions);
+  const auditItems = q.filter(i => i.isAudit);
+  assert.equal(audit.n, auditItems.length, "measured only on audited auto-accepts");
+  assert.ok(audit.precision >= 0 && audit.precision <= 1);
+});
+
 test("core: reviewQueue with no feasible policy queues everything", () => {
   const { docs } = core.parseBatch(batchJSONL());
-  assert.equal(core.reviewQueue(docs, NaN).length, 6);
+  // everything is below an infinite threshold, so all 6 are corrections and
+  // there is nothing on the auto-accept side to audit
+  const q = core.reviewQueue(docs, NaN, 0.5);
+  assert.equal(q.length, 6);
+  assert.ok(q.every(i => !i.isAudit));
 });
 
 test("core: toLabelCsv emits only decided rows, approve=1 / edit=0", () => {
@@ -780,15 +839,17 @@ function bootWithBigBatch(opts, times) {
   return w;
 }
 
-test("review: queue holds only below-threshold fields, riskiest first", () => {
+test("review: queue is below-threshold corrections, riskiest first, plus audits", () => {
   const w = bootWithBatch();
   assert.equal(w.document.getElementById("reviewCard").hidden, false);
-  // 85 of 480 fields fall below the fitted threshold
   assert.match(rvText(w, ".rvprog"), new RegExp(`^0 \\/ ${QN(w)} reviewed$`));
-  const scores = w.eval("state.review.items.map(i => i.score)");
-  assert.deepEqual(scores, scores.slice().sort((a, b) => a - b), "riskiest first");
-  const conf = rvText(w, ".rvconf");
-  assert.match(conf, /geo \d+\.\d%/);
+  // corrections are the below-threshold fields, sorted riskiest first...
+  const corr = w.eval("state.review.items.filter(i => !i.isAudit).map(i => i.score)");
+  assert.deepEqual(corr, corr.slice().sort((a, b) => a - b), "corrections: riskiest first");
+  // ...and a uniform ~2% audit sample is mixed in, drawn from auto-accepts
+  const audits = w.eval("state.review.items.filter(i => i.isAudit).length");
+  assert.ok(audits > 0, "the batch is large enough to contain audits");
+  assert.match(rvText(w, ".rvconf"), /geo \d+\.\d%/);
   assert.equal(rv(w, ".rvvalue").textContent,
     String(w.eval("state.review.items[0].value")), "shows the extracted value");
 });
@@ -817,9 +878,10 @@ test("review: 'e' edits inline and Enter records a correction", () => {
   input.value = "2024-02-28";
   key(w, "Enter", input);
   assert.match(rvText(w, ".rvprog"), new RegExp(`^1 \\/ ${QN(w)} reviewed$`));
-  // the correction is an implicit "this was wrong" label
-  const csv = w.eval("toLabelCsv(state.review.items, state.review.decisions)");
-  assert.match(csv.split("\n")[1], new RegExp(`,\\${path},.*,0$`));
+  // the correction is recorded as an edit decision on that field
+  const dec = w.eval(`(() => { const it = state.review.items.find(i => i.path === ${JSON.stringify(path)} && state.review.decisions[i.key]); return state.review.decisions[it.key]; })()`);
+  assert.equal(dec.action, "edit");
+  assert.equal(dec.value, "2024-02-28");
 });
 
 test("review: an edit that is not valid JSON for a non-string field is rejected", () => {
@@ -878,46 +940,59 @@ test("review: shortcuts stay out of the way while typing", () => {
   assert.match(rvText(w, ".rvprog"), new RegExp(`^0 \\/ ${QN(w)} reviewed$`));
 });
 
-test("review: clearing the queue reports what was reviewed vs auto-accepted", () => {
+test("review: clearing the queue reports corrections, and audits the guarantee", () => {
   const w = bootWithBatch();
   w.eval("state.review.items.forEach(i => state.review.decisions[i.key] = {action:'approve'}); renderReview();");
   const done = rvText(w, ".rvdone");
-  const n = QN(w);
   const total = core.parseBatch(w.eval("DEMO_BATCH_JSONL")).docs
     .reduce((a, d) => a + Object.keys(d.fields).length, 0);
+  const corr = w.eval("state.review.items.filter(i => !i.isAudit).length");
   assert.match(done, /Queue cleared/);
-  // PLAN_v2 3.3: "reviewed 118 of 2,340 fields (5.0%), the rest auto-accepted"
-  assert.match(done, new RegExp(`You reviewed\\s*${n}\\s*of ${total} fields`));
-  assert.match(done, new RegExp(`The other ${total - n} auto-accepted with precision guaranteed at\\s*≥\\s*95%`));
-  assert.match(done, new RegExp(`${n} approved · 0 corrected`));
-  assert.ok(n / total < 0.15, "a real batch needs a human on a small minority of fields");
+  assert.match(done, new RegExp(`corrected the\\s*${corr}\\s*below-threshold fields of ${total}`));
+  assert.match(done, new RegExp(`The other ${total - corr} auto-accepted with precision guaranteed at\\s*≥\\s*95%`));
+  // the audit: everything was approved, so precision reads 100% and holds
+  const nAudit = w.eval("state.review.items.filter(i => i.isAudit).length");
+  assert.match(w.document.querySelector(".audit").textContent,
+    new RegExp(`of ${nAudit} auto-accepts spot-checked at random, ${nAudit} were correct \\(100\\.0%\\)`));
+  assert.ok(w.document.querySelector(".audit").classList.contains("ok"), "guarantee holding");
+  assert.ok(corr / total < 0.15, "a real batch needs a human on a small minority of fields");
 });
 
-test("review: the done screen refits the threshold from the review labels (flywheel)", () => {
+test("review: a failing audit warns the guarantee expired", () => {
   const w = bootWithBatch();
-  // approve most, correct a few - a realistic label set
-  w.eval(`state.review.items.forEach((i, n) => state.review.decisions[i.key] =
-    n % 4 === 0 ? {action:'edit', value:'x'} : {action:'approve'}); renderReview();`);
-  const before = w.document.querySelector("#stats .stat b").textContent;
-  const nCalib = w.eval("state.fit.nCalib"), n = QN(w);
+  // mark every audited auto-accept as wrong -> audit precision 0%, below target
+  w.eval(`state.review.items.forEach(i => state.review.decisions[i.key] =
+    i.isAudit ? {action:'edit', value:'x'} : {action:'approve'}); renderReview();`);
+  const audit = w.document.querySelector(".audit");
+  assert.ok(audit.classList.contains("bad"), "a blown guarantee is flagged, not hidden");
+  assert.match(audit.textContent, /below.*your 95% target|guarantee may have expired/);
+});
+
+test("review: the done screen refits from the audit sample, not the queue (D-007)", () => {
+  // A single 60-doc batch yields ~12 audit labels, under MIN_CALIB_ROWS, so
+  // refit is correctly disabled and says why. Replay to clear the bar.
+  const w = bootWithBigBatch({}, 3);
+  w.eval("state.review.items.forEach(i => state.review.decisions[i.key] = {action:'approve'}); renderReview();");
+  const nCalibRows = w.eval("calibRows(state.review.items, state.review.decisions).length");
+  assert.ok(nCalibRows >= 20, "enough audit labels to refit after replaying the batch");
+  const before = w.eval("state.calib.scores.length");
 
   w.document.getElementById("rvRefit").dispatchEvent(new w.Event("click", { bubbles: true }));
 
   const csv = w.document.getElementById("csvIn").value;
   assert.match(csv.split("\n")[0], /^doc_id,field_path,score,correct$/);
-  assert.ok(w.document.getElementById("tabCsv").classList.contains("on"), "switched to the CSV source");
-  assert.equal(w.document.getElementById("csvErr").style.display, "none",
-    "the exported 4-column CSV is accepted as-is");
-  assert.ok(w.eval("state.fit.feasible"), "the refit still yields a usable policy");
-  assert.equal(w.eval("state.fit.nCalib"), nCalib + n, "review labels were pooled, not substituted");
-  // Refitting on the queue alone would be selection bias: it only ever holds
-  // below-threshold fields, so on its own it fits "review everything". Pooled,
-  // it cannot move a threshold that sits above every label it contains - which
-  // is exactly why the threshold is expected to hold here.
-  assert.equal(w.document.querySelector("#stats .stat b").textContent, before,
-    "tail labels sharpen the boundary; they do not move a threshold above them");
+  assert.equal(w.document.getElementById("csvErr").style.display, "none");
+  assert.equal(w.eval("state.fit.nCalib"), before + nCalibRows,
+    "only the uniform audit labels are pooled, not the whole queue");
   assert.match(w.document.getElementById("calibProv").textContent,
-    new RegExp(`plus\\s*${n}\\s*labels from this review`));
+    new RegExp(`${nCalibRows} from this batch's uniform audit sample`));
+});
+
+test("review: refit is disabled with too few audit labels, and says why", () => {
+  const w = bootWithBatch();   // one 60-doc batch: ~12 audits, under the minimum
+  w.eval("state.review.items.forEach(i => state.review.decisions[i.key] = {action:'approve'}); renderReview();");
+  assert.ok(w.document.getElementById("rvRefit").disabled);
+  assert.match(rvText(w, "#rvRefitWhy"), /uniform audit sample, not the correction queue/);
 });
 
 test("export: the three files are built from what is loaded", () => {
@@ -1010,7 +1085,7 @@ test("review: progress survives a reload and can be resumed (D-004)", async () =
   w2.document.getElementById("resumeYes").dispatchEvent(new w2.Event("click", { bubbles: true }));
   assert.match(rvText(w2, ".rvprog"), new RegExp(`^3 \\/ ${QN(w2)} reviewed$`), "picked up where it left off");
   assert.equal(bar.hidden, true);
-  assert.match(w2.document.querySelectorAll("#batchStats .stat b")[3].textContent, new RegExp(`^3 \\/ ${QN(w2)}$`));
+  assert.equal(w2.document.querySelectorAll("#batchStats .stat b")[3].textContent, `3 / ${QN(w2)}`);
 });
 
 test("review: 'start over' drops the saved session (D-004)", async () => {
@@ -1059,15 +1134,15 @@ test("acceptance: upload -> review -> export -> refit runs end to end (PLAN_v2 5
     state.review.decisions[i.key] = {action:'approve'}; }); renderReview();`);
   assert.match(rvText(w, ".rvdone"), /Queue cleared/);
 
-  // export
+  // export: the label CSV is the audit sample (what feeds the calibrator),
+  // not the whole queue - the correction labels are censored (D-007)
   w.eval("download = (name, text) => { window.__dl = {name, text}; };");
   w.document.getElementById("expLabels").dispatchEvent(new w.Event("click", { bubbles: true }));
-  assert.equal(w.__dl.text.trim().split("\n").length, QN(w) + 1, "header + one row per decision");
-
-  // refit from those labels, in one click
-  w.document.getElementById("rvRefit").dispatchEvent(new w.Event("click", { bubbles: true }));
-  assert.equal(w.document.getElementById("csvErr").style.display, "none");
-  assert.ok(w.eval("state.fit.feasible"), "and the pooled refit still yields a usable policy");
+  const nCalibRows = w.eval("calibRows(state.review.items, state.review.decisions).length");
+  assert.equal(w.__dl.text.trim().split("\n").length, nCalibRows + 1, "header + one audit label per row");
+  // the corrected JSONL still carries the edit that was made during review
+  w.document.getElementById("expJsonl").dispatchEvent(new w.Event("click", { bubbles: true }));
+  assert.ok(w.__dl.text.includes("2024-02-28"), "the correction is applied in the corrected output");
 });
 
 test("export: the panel note tracks review decisions as they happen", () => {

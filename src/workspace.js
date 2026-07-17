@@ -148,11 +148,14 @@ function renderBatch() {
     (errors.length ? ` · ${nfmt(errors.length)} line(s) skipped (first: line ${errors[0].line})` : "");
 
   const reviewed = state.review ? Object.keys(state.review.decisions).length : 0;
+  // the queue is corrections + the audit sample, so the denominator is the
+  // whole queue, not just the below-threshold count
+  const queued = state.review ? state.review.items.length : s.nReview;
   const cells = [
     [nfmt(s.nDocs), "responses"],
     [nfmt(s.nFields), "fields"],
     [Number.isFinite(thr) ? pct(s.autoAcceptRate) : "0%", "auto-accept on this batch"],
-    [`${nfmt(reviewed)} / ${nfmt(s.nReview)}`, "reviewed"],
+    [`${nfmt(reviewed)} / ${nfmt(queued)}`, "reviewed"],
   ];
   $("batchStats").innerHTML = cells.map(([b, t]) => `<div class="stat"><b>${b}</b><span>${t}</span></div>`).join("");
   renderHist(docs, thr);
@@ -190,10 +193,19 @@ function exportJsonl() {
     "application/x-ndjson");
 }
 
+// The label CSV exists to feed the calibrator, so it carries ONLY the uniform
+// audit sample - the correction-queue labels are censored and would bias a
+// refit (D-007). Corrections live in the corrected JSONL as applied edits.
 function exportLabels() {
-  download("fieldtrust-labels.csv",
-    toLabelCsv(state.review ? state.review.items : [], state.review ? state.review.decisions : {}),
-    "text/csv");
+  const rows = ["doc_id,field_path,score,correct"];
+  const items = state.review ? state.review.items : [];
+  const decisions = state.review ? state.review.decisions : {};
+  for (const it of items) {
+    const d = decisions[it.key];
+    if (!it.inCalib || !d) continue;
+    rows.push([it.docId, it.path, it.score.toFixed(6), d.action === "approve" ? 1 : 0].join(","));
+  }
+  download("fieldtrust-labels.csv", rows.join("\n") + "\n", "text/csv");
 }
 
 function exportPolicy() {

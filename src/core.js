@@ -400,24 +400,86 @@ function setByPath(obj, path, value) {
 }
 
 // ---------- review queue ----------
-// Only what the policy sends to review, riskiest first. With no feasible
-// policy every field is queued - same safe default as decide().
-const itemKey = (docId, path) => docId + "\u0000" + path;
+const itemKey = (docId, path) => docId + " " + path;
 
-function reviewQueue(docs, threshold) {
-  const items = [];
+// Fraction of every batch that is labelled for calibration, drawn without
+// looking at which side of the threshold a field fell on. ~2% extra review;
+// it is what keeps the whole guarantee honest (docs/DECISIONS.md D-007).
+const AUDIT_RATE = 0.02;
+
+// Deterministic uniform draw in [0,1) from a field's identity, so the audit
+// sample survives a reload and cannot be re-rolled until it looks good.
+function sampleU(key) {
+  return parseInt(hashText(key), 16) / 4294967296;
+}
+
+// The queue is two things that must not be confused:
+//
+//   correction  - every field below the threshold. This is the work.
+//   calibration - a uniform AUDIT_RATE sample of ALL fields, drawn regardless
+//                 of the decision. This is the evidence.
+//
+// Labels from the correction queue are a censored sample (everything in it is
+// by construction below the threshold), so fitting on them estimates precision
+// from the tail and freezes the policy - measured on real data, six batches of
+// review labels moved the threshold not at all, while a uniform 2% sample let
+// it fall from -0.0205 to -0.0403. Only the uniform sample is i.i.d., so only
+// it may be fed back to the calibrator. See docs/DECISIONS.md D-007.
+function reviewQueue(docs, threshold, auditRate = AUDIT_RATE) {
+  const correction = [], audit = [];
   for (const doc of docs) {
     for (const f of Object.values(doc.fields)) {
-      if (Number.isFinite(threshold) && f.meanLogprob >= threshold) continue;
-      items.push({
-        key: itemKey(doc.id, f.path), docId: doc.id, path: f.path, kind: f.kind,
+      const key = itemKey(doc.id, f.path);
+      const below = !Number.isFinite(threshold) || f.meanLogprob < threshold;
+      const inSample = sampleU(key) < auditRate;
+      if (!below && !inSample) continue;          // auto-accepted and not audited
+      const item = {
+        key, docId: doc.id, path: f.path, kind: f.kind,
         value: getByPath(doc.data, f.path), score: f.meanLogprob,
         geoProb: f.geoProb, minProb: f.minProb, tokens: f.tokens,
         context: doc.context,
-      });
+        isAudit: !below,        // pulled from the auto-accept side by the sample
+        inCalib: inSample,      // part of the uniform calibration sample
+      };
+      (below ? correction : audit).push(item);
     }
   }
-  return items.sort((a, b) => a.score - b.score || (a.docId < b.docId ? -1 : 1));
+  correction.sort((a, b) => a.score - b.score || (a.docId < b.docId ? -1 : 1));
+
+  // Interleave audits rather than append them: sorted by score they would all
+  // land at the end, so stopping early would skip the sample, and a reviewer
+  // who noticed the pattern would rubber-stamp them.
+  const out = correction.slice();
+  for (const a of audit) {
+    const pos = Math.floor(sampleU(a.key + "#pos") * (out.length + 1));
+    out.splice(pos, 0, a);
+  }
+  return out;
+}
+
+// The calibration sample: uniform and decision-blind, so poolable with any
+// earlier uniform sample and valid under plain Wilson.
+function calibRows(items, decisions) {
+  const rows = [];
+  for (const it of items) {
+    const d = decisions[it.key];
+    if (!it.inCalib || !d) continue;
+    rows.push({ score: it.score, correct: d.action === "approve" });
+  }
+  return rows;
+}
+
+// Is the guarantee still holding in production? Measured only on audited
+// auto-accepts - the one unbiased read we have of the region we promised.
+function auditPrecision(items, decisions) {
+  let n = 0, ok = 0;
+  for (const it of items) {
+    const d = decisions[it.key];
+    if (!it.isAudit || !d) continue;
+    n++;
+    if (d.action === "approve") ok++;
+  }
+  return { n, correct: ok, precision: n ? ok / n : NaN };
 }
 
 // ---------- label CSV ----------

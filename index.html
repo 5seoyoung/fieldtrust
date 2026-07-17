@@ -217,6 +217,12 @@ input[type=file]:focus-visible{outline:2px solid var(--certain);outline-offset:2
 .rvbtn:focus-visible{outline:2px solid var(--certain);outline-offset:2px}
 kbd{font-family:var(--mono);font-size:10.5px;background:var(--ink);color:#fff;border-radius:4px;padding:1px 5px}
 
+.audit{font-size:12.5px;line-height:1.55;text-align:left;border-radius:8px;padding:10px 12px;margin:12px auto;max-width:52ch}
+.audit.ok{background:var(--certain-soft);border:1px solid #BFDDD6;color:#0A5C4D}
+.audit.bad{background:var(--alert-soft);border:1px solid #E4B8B0;color:#8A2A1C}
+.audit:not(.ok):not(.bad){background:#F4F7F6;border:1px solid #E4EBE9;color:var(--muted)}
+.audit b{font-family:var(--mono);font-size:12px}
+
 .rvdone{text-align:center;padding:14px 8px}
 .rvdonehd{font-family:var(--disp);font-weight:700;font-size:17px;margin-bottom:8px}
 .rvdone p{font-size:13.5px;color:#3E4E4A;max-width:52ch;margin:0 auto 6px}
@@ -396,7 +402,7 @@ kbd{font-family:var(--mono);font-size:10.5px;background:var(--ink);color:#fff;bo
   </div>
 
   <div class="card" id="reviewCard" hidden>
-    <div class="eyebrow">Review queue · below threshold only</div>
+    <div class="eyebrow">Review queue · below-threshold fields + a random audit</div>
     <div class="resume" id="resumeBar" hidden></div>
     <div id="reviewBody"></div>
   </div>
@@ -857,24 +863,86 @@ function setByPath(obj, path, value) {
 }
 
 // ---------- review queue ----------
-// Only what the policy sends to review, riskiest first. With no feasible
-// policy every field is queued - same safe default as decide().
-const itemKey = (docId, path) => docId + "\u0000" + path;
+const itemKey = (docId, path) => docId + " " + path;
 
-function reviewQueue(docs, threshold) {
-  const items = [];
+// Fraction of every batch that is labelled for calibration, drawn without
+// looking at which side of the threshold a field fell on. ~2% extra review;
+// it is what keeps the whole guarantee honest (docs/DECISIONS.md D-007).
+const AUDIT_RATE = 0.02;
+
+// Deterministic uniform draw in [0,1) from a field's identity, so the audit
+// sample survives a reload and cannot be re-rolled until it looks good.
+function sampleU(key) {
+  return parseInt(hashText(key), 16) / 4294967296;
+}
+
+// The queue is two things that must not be confused:
+//
+//   correction  - every field below the threshold. This is the work.
+//   calibration - a uniform AUDIT_RATE sample of ALL fields, drawn regardless
+//                 of the decision. This is the evidence.
+//
+// Labels from the correction queue are a censored sample (everything in it is
+// by construction below the threshold), so fitting on them estimates precision
+// from the tail and freezes the policy - measured on real data, six batches of
+// review labels moved the threshold not at all, while a uniform 2% sample let
+// it fall from -0.0205 to -0.0403. Only the uniform sample is i.i.d., so only
+// it may be fed back to the calibrator. See docs/DECISIONS.md D-007.
+function reviewQueue(docs, threshold, auditRate = AUDIT_RATE) {
+  const correction = [], audit = [];
   for (const doc of docs) {
     for (const f of Object.values(doc.fields)) {
-      if (Number.isFinite(threshold) && f.meanLogprob >= threshold) continue;
-      items.push({
-        key: itemKey(doc.id, f.path), docId: doc.id, path: f.path, kind: f.kind,
+      const key = itemKey(doc.id, f.path);
+      const below = !Number.isFinite(threshold) || f.meanLogprob < threshold;
+      const inSample = sampleU(key) < auditRate;
+      if (!below && !inSample) continue;          // auto-accepted and not audited
+      const item = {
+        key, docId: doc.id, path: f.path, kind: f.kind,
         value: getByPath(doc.data, f.path), score: f.meanLogprob,
         geoProb: f.geoProb, minProb: f.minProb, tokens: f.tokens,
         context: doc.context,
-      });
+        isAudit: !below,        // pulled from the auto-accept side by the sample
+        inCalib: inSample,      // part of the uniform calibration sample
+      };
+      (below ? correction : audit).push(item);
     }
   }
-  return items.sort((a, b) => a.score - b.score || (a.docId < b.docId ? -1 : 1));
+  correction.sort((a, b) => a.score - b.score || (a.docId < b.docId ? -1 : 1));
+
+  // Interleave audits rather than append them: sorted by score they would all
+  // land at the end, so stopping early would skip the sample, and a reviewer
+  // who noticed the pattern would rubber-stamp them.
+  const out = correction.slice();
+  for (const a of audit) {
+    const pos = Math.floor(sampleU(a.key + "#pos") * (out.length + 1));
+    out.splice(pos, 0, a);
+  }
+  return out;
+}
+
+// The calibration sample: uniform and decision-blind, so poolable with any
+// earlier uniform sample and valid under plain Wilson.
+function calibRows(items, decisions) {
+  const rows = [];
+  for (const it of items) {
+    const d = decisions[it.key];
+    if (!it.inCalib || !d) continue;
+    rows.push({ score: it.score, correct: d.action === "approve" });
+  }
+  return rows;
+}
+
+// Is the guarantee still holding in production? Measured only on audited
+// auto-accepts - the one unbiased read we have of the region we promised.
+function auditPrecision(items, decisions) {
+  let n = 0, ok = 0;
+  for (const it of items) {
+    const d = decisions[it.key];
+    if (!it.isAudit || !d) continue;
+    n++;
+    if (d.action === "approve") ok++;
+  }
+  return { n, correct: ok, precision: n ? ok / n : NaN };
 }
 
 // ---------- label CSV ----------
@@ -1486,11 +1554,14 @@ function renderBatch() {
     (errors.length ? ` · ${nfmt(errors.length)} line(s) skipped (first: line ${errors[0].line})` : "");
 
   const reviewed = state.review ? Object.keys(state.review.decisions).length : 0;
+  // the queue is corrections + the audit sample, so the denominator is the
+  // whole queue, not just the below-threshold count
+  const queued = state.review ? state.review.items.length : s.nReview;
   const cells = [
     [nfmt(s.nDocs), "responses"],
     [nfmt(s.nFields), "fields"],
     [Number.isFinite(thr) ? pct(s.autoAcceptRate) : "0%", "auto-accept on this batch"],
-    [`${nfmt(reviewed)} / ${nfmt(s.nReview)}`, "reviewed"],
+    [`${nfmt(reviewed)} / ${nfmt(queued)}`, "reviewed"],
   ];
   $("batchStats").innerHTML = cells.map(([b, t]) => `<div class="stat"><b>${b}</b><span>${t}</span></div>`).join("");
   renderHist(docs, thr);
@@ -1528,10 +1599,19 @@ function exportJsonl() {
     "application/x-ndjson");
 }
 
+// The label CSV exists to feed the calibrator, so it carries ONLY the uniform
+// audit sample - the correction-queue labels are censored and would bias a
+// refit (D-007). Corrections live in the corrected JSONL as applied edits.
 function exportLabels() {
-  download("fieldtrust-labels.csv",
-    toLabelCsv(state.review ? state.review.items : [], state.review ? state.review.decisions : {}),
-    "text/csv");
+  const rows = ["doc_id,field_path,score,correct"];
+  const items = state.review ? state.review.items : [];
+  const decisions = state.review ? state.review.decisions : {};
+  for (const it of items) {
+    const d = decisions[it.key];
+    if (!it.inCalib || !d) continue;
+    rows.push([it.docId, it.path, it.score.toFixed(6), d.action === "approve" ? 1 : 0].join(","));
+  }
+  download("fieldtrust-labels.csv", rows.join("\n") + "\n", "text/csv");
 }
 
 function exportPolicy() {
@@ -1763,26 +1843,42 @@ function renderReviewDone() {
   const r = state.review;
   const s = batchSummary(state.batch.docs, state.fit && state.fit.feasible ? state.fit.threshold : NaN);
   const edits = Object.values(r.decisions).filter(d => d.action === "edit").length;
-  const share = s.nFields ? r.items.length / s.nFields : 0;
+  const corrections = r.items.filter(it => !it.isAudit).length;
+  const share = s.nFields ? corrections / s.nFields : 0;
+
+  // The audit: fields pulled from the auto-accept side by the uniform sample.
+  // This is the only unbiased read of whether the guarantee actually held.
+  const audit = auditPrecision(r.items, r.decisions);
+  const target = state.fit && state.fit.feasible ? state.fit.targetPrecision : null;
+  const held = target == null || isNaN(audit.precision) || audit.precision >= target;
+
   const guarantee = state.fit && state.fit.feasible
-    ? `The other ${nfmt(s.nFields - r.items.length)} auto-accepted with precision guaranteed at &ge; ${pct(state.fit.targetPrecision, 0)}.`
+    ? `The other ${nfmt(s.nFields - corrections)} auto-accepted with precision guaranteed at &ge; ${pct(target, 0)}.`
     : `No feasible policy is fitted, so nothing auto-accepted.`;
 
-  // Refitting on a handful of labels would produce a bound so wide it is
-  // useless, so the calibrator refuses under MIN_CALIB_ROWS. Say that here
-  // rather than letting the button fail with an error further up the page.
-  const enough = Object.keys(r.decisions).length >= MIN_CALIB_ROWS;
+  // Only the uniform calibration sample can be fed back (see refitFromReview).
+  const nCalib = calibRows(r.items, r.decisions).length;
+  const enough = nCalib >= MIN_CALIB_ROWS;
+
+  const auditLine = audit.n
+    ? `<div class="audit ${held ? "ok" : "bad"}">` +
+      `<b>Audit:</b> of ${nfmt(audit.n)} auto-accepts spot-checked at random, ${nfmt(audit.correct)} were correct ` +
+      `(${pct(audit.precision)}). ${held
+        ? `That is at or above your ${pct(target, 0)} target - the guarantee is holding.`
+        : `That is <b>below</b> your ${pct(target, 0)} target. The guarantee may have expired on this data; refit before trusting auto-accept.`}</div>`
+    : `<div class="audit"><b>Audit:</b> no auto-accepts landed in the random sample on this batch - review a larger one to check the guarantee in production.</div>`;
 
   $("reviewBody").innerHTML = `
     <div class="rvdone">
       <div class="rvdonehd">Queue cleared</div>
-      <p>You reviewed <b>${nfmt(r.items.length)}</b> of ${nfmt(s.nFields)} fields (${pct(share)}). ${guarantee}</p>
-      <p class="rvdonesub">${nfmt(r.items.length - edits)} approved · ${nfmt(edits)} corrected. That is a labeled set - feed it back and the next batch needs less review.</p>
+      <p>You corrected the <b>${nfmt(corrections)}</b> below-threshold fields of ${nfmt(s.nFields)} (${pct(share)}). ${guarantee}</p>
+      ${auditLine}
+      <p class="rvdonesub">${nfmt(r.items.length - edits)} approved · ${nfmt(edits)} corrected.</p>
       <div class="rvdoneact">
-        <button class="btn" id="rvRefit"${enough ? "" : " disabled"}>Refit threshold with these labels</button>
+        <button class="btn" id="rvRefit"${enough ? "" : " disabled"}>Refit from the audit sample</button>
         <button class="btn ghost" id="rvBack">Back to queue</button>
       </div>
-      ${enough ? "" : `<p class="rvdonesub" id="rvRefitWhy">Refitting needs at least ${MIN_CALIB_ROWS} labelled fields; this queue produced ${nfmt(Object.keys(r.decisions).length)}. Review a larger batch, or export the labels and pool them with earlier runs.</p>`}
+      ${enough ? "" : `<p class="rvdonesub" id="rvRefitWhy">Refitting uses the uniform audit sample, not the correction queue (those labels are all below threshold and would bias the fit). This batch produced ${nfmt(nCalib)} audit labels; ${MIN_CALIB_ROWS} are needed. Review more batches to accumulate them.</p>`}
     </div>`;
   if (enough) $("rvRefit").addEventListener("click", refitFromReview);
   // reopening lets you walk back through decisions after clearing the queue
@@ -1793,33 +1889,32 @@ function renderReviewDone() {
   });
 }
 
-// ---------- the flywheel (PLAN_v2 1.1) ----------
-// Review output is calibration input - but not on its own. The queue only ever
-// contains fields BELOW the threshold, so its labels are a censored sample of
-// the score distribution. Fitting on them alone estimates precision from the
-// tail and lands on "review everything", which is the opposite of the point.
-//
-// Pooling them into the existing calibration set is sound for the region that
-// matters: every review label sits below the current threshold, so it cannot
-// bias the precision estimate for any candidate threshold above it, and it
-// sharpens the estimate near the boundary where the choice is actually made.
+// ---------- the flywheel (PLAN_v2 1.1, corrected in D-007) ----------
+// Review output is calibration input, but ONLY the uniform audit sample.
+// The correction queue is every below-threshold field, i.e. a censored sample;
+// pooling it froze the policy on real data (six batches moved the threshold
+// zero). The audit sample is drawn uniformly across all fields regardless of
+// the decision, so it is i.i.d. and plain Wilson stays valid when it is pooled
+// with the existing calibration set.
 function refitFromReview() {
   const rows = [];
   for (let i = 0; i < state.calib.scores.length; i++) {
     rows.push(`calib-${i},$,${state.calib.scores[i].toFixed(6)},${state.calib.correct[i] ? 1 : 0}`);
   }
-  const fresh = toLabelCsv(state.review.items, state.review.decisions).trim().split("\n").slice(1);
-  const csv = "doc_id,field_path,score,correct\n" + rows.concat(fresh).join("\n") + "\n";
-
-  $("csvIn").value = csv;
+  const fresh = calibRows(state.review.items, state.review.decisions);
+  for (const row of fresh) {
+    rows.push(`audit,$,${row.score.toFixed(6)},${row.correct ? 1 : 0}`);
+  }
+  $("csvIn").value = "doc_id,field_path,score,correct\n" + rows.join("\n") + "\n";
   $("csvIn").style.display = "block";
   $("tabCsv").classList.add("on");
   $("tabSynth").classList.remove("on");
   refit();
   $("csvErr").style.display = "none";
-  $("calibProv").innerHTML = `<b>${nfmt(state.calib.scores.length)}</b> fields: your existing ` +
-    `calibration set plus <b>${nfmt(fresh.length)}</b> labels from this review. Review only ever ` +
-    `surfaces below-threshold fields, so these sharpen the boundary rather than replace the set.`;
+  $("calibProv").innerHTML = `<b>${nfmt(state.calib.scores.length)}</b> existing labels plus ` +
+    `<b>${nfmt(fresh.length)}</b> from this batch's uniform audit sample. The audit is drawn ` +
+    `across all fields regardless of the decision, so it stays an unbiased i.i.d. sample - ` +
+    `the correction queue is not fed back, because it only ever holds below-threshold fields.`;
   const body = $("reviewBody");
   if (body.scrollIntoView) body.scrollIntoView({ block: "nearest" });
 }

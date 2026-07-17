@@ -207,6 +207,12 @@ input[type=file]:focus-visible{outline:2px solid var(--certain);outline-offset:2
 .rvbtn:focus-visible{outline:2px solid var(--certain);outline-offset:2px}
 kbd{font-family:var(--mono);font-size:10.5px;background:var(--ink);color:#fff;border-radius:4px;padding:1px 5px}
 
+.audit{font-size:12.5px;line-height:1.55;text-align:left;border-radius:8px;padding:10px 12px;margin:12px auto;max-width:52ch}
+.audit.ok{background:var(--certain-soft);border:1px solid #BFDDD6;color:#0A5C4D}
+.audit.bad{background:var(--alert-soft);border:1px solid #E4B8B0;color:#8A2A1C}
+.audit:not(.ok):not(.bad){background:#F4F7F6;border:1px solid #E4EBE9;color:var(--muted)}
+.audit b{font-family:var(--mono);font-size:12px}
+
 .rvdone{text-align:center;padding:14px 8px}
 .rvdonehd{font-family:var(--disp);font-weight:700;font-size:17px;margin-bottom:8px}
 .rvdone p{font-size:13.5px;color:#3E4E4A;max-width:52ch;margin:0 auto 6px}
